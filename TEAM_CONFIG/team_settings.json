@@ -7,7 +7,7 @@
   "logo_image": "assets/logo.png",
   "strict_mode_default": true,
 
-  "teams": {
+  "codes": {
     "OCS2026": {
       "team_name": "Oklahoma Christian Schools",
       "team_slug": "ocs",
@@ -26,3 +26,4 @@
     }
   }
 }
+
