@@ -1,10 +1,28 @@
-
- {
+{
   "app_title": "RP Spray Analytics",
   "subtitle": "Coaches that want to win, WILL put in the time",
   "primary_color": "#b91c1c",
   "secondary_color": "#111111",
   "background_image": "assets/background.jpg",
   "logo_image": "assets/logo.png",
-  "strict_mode_default": true
+  "strict_mode_default": true,
+
+  "teams": {
+    "OCS2026": {
+      "team_name": "Oklahoma Christian Schools",
+      "team_slug": "ocs",
+      "logo_path": "assets/ocs/ocslogo.png",
+      "background_path": "assets/ocs/ocsbackground.jpg",
+      "roster_file": "TEAM_CONFIG/rosters/ocs.txt",
+      "data_folder": "data/ocs"
+    },
+    "CLARE2026": {
+      "team_name": "Claremore High School",
+      "team_slug": "claremore",
+      "logo_path": "assets/claremore/logo.png",
+      "background_path": "assets/claremore/background.jpg",
+      "roster_file": "TEAM_CONFIG/rosters/claremore.txt",
+      "data_folder": "data/claremore"
+    }
+  }
 }
