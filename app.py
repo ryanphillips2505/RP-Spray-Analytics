@@ -72,8 +72,7 @@ def require_team_access():
     st.title("RP Spray Analytics")
     st.markdown("### Enter Access Code")
 
-  code = st.text_input("Access Code").strip().upper()
-
+    code = st.text_input("Access Code").strip().upper()
 
     if st.button("Unlock"):
         if code in codes:
@@ -83,6 +82,7 @@ def require_team_access():
             st.error("Invalid access code")
 
     st.stop()
+
 TEAM_CODE, TEAM_CFG = require_team_access()
 # -----------------------------
 # PAGE CONFIG
@@ -1090,6 +1090,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
