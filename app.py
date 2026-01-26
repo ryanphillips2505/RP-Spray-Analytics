@@ -12,6 +12,8 @@ from typing import Optional, Tuple
 # -----------------------------
 SETTINGS_PATH = os.path.join("TEAM_CONFIG", "team_settings.json")
 ASSETS_DIR = "assets"
+# FORCE include team data folders (Streamlit Cloud quirk)
+_ = os.listdir("data/teams")
 
 # These become TEAM-CODE specific AFTER login (so rosters don't leak across teams)
 ROSTERS_DIR = None
@@ -1029,6 +1031,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
