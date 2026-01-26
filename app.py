@@ -55,11 +55,11 @@ def load_team_codes():
         return {}
     with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
-codes = data.get("codes", {})
-return {str(k).strip().upper(): v for k, v in codes.items()}
-
-def require_team_access():
-    codes = load_team_codes()
+        codes = data.get("codes", {})
+        return {str(k).strip().upper(): v for k, v in codes.items()}
+        
+        def require_team_access():
+            codes = load_team_codes()
 
     if "team_code" not in st.session_state:
         st.session_state.team_code = None
@@ -1090,6 +1090,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
