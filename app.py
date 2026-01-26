@@ -5,14 +5,9 @@ import base64
 import re
 from datetime import datetime
 from typing import Optional, Tuple
-import streamlit as st
-import os
-import json
-import base64
-import re
-from datetime import datetime
-from typing import Optional, Tuple
 import pandas as pd   # ✅ MOVE IT HERE
+from io import BytesIO
+
 
 
 # -----------------------------
@@ -1020,17 +1015,33 @@ col_order = [c for c in col_order if c in df_season.columns]
 df_season = df_season[col_order]
 
 st.dataframe(df_season, use_container_width=True)
-
+# --- downloads (CSV + Excel) ---
 csv_bytes = df_season.to_csv(index=False).encode("utf-8")
-
 safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
 
-st.download_button(
-    label="📊 Download Season Report (Google Sheets Ready)",
-    data=csv_bytes,
-  file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
-    mime="text/csv",
-)
+# Excel bytes (clean scouting-ready)
+out = BytesIO()
+with pd.ExcelWriter(out, engine="openpyxl") as writer:
+    df_season.to_excel(writer, index=False, sheet_name="Season")
+excel_bytes = out.getvalue()
+
+col_dl1, col_dl2 = st.columns(2)
+
+with col_dl1:
+    st.download_button(
+        label="📊 Download Season Report (Excel)",
+        data=excel_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+with col_dl2:
+    st.download_button(
+        label="📄 Download Season Report (CSV - Google Sheets Ready)",
+        data=csv_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
+        mime="text/csv",
+    )
 
 st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
 selectable_players = sorted(
@@ -1058,6 +1069,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
