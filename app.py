@@ -3,6 +3,7 @@ import os
 import json
 import base64
 import re
+import hashlib
 from datetime import datetime
 from typing import Optional, Tuple
 import pandas as pd   # ✅ MOVE IT HERE
@@ -11,6 +12,14 @@ from io import BytesIO
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
 from openpyxl.styles import PatternFill
+
+def normalize_pbp(text: str) -> str:
+    return "\n".join([ln.strip() for ln in (text or "").strip().splitlines() if ln.strip()])
+
+def game_key_from_pbp(team_key: str, pbp_text: str) -> str:
+    norm = normalize_pbp(pbp_text)
+    h = hashlib.sha1((team_key + "||" + norm).encode("utf-8")).hexdigest()
+    return f"pbp_sha1_{h}"
 
 
 
@@ -860,12 +869,42 @@ raw_text = st.text_area(
 # -----------------------------
 # PROCESS GAME
 # -----------------------------
+if "processing_game" not in st.session_state:
+    st.session_state.processing_game = False
+
 if st.button("📥 Process Game (ADD to Season Totals)"):
+    # --- session lock to prevent double-processing ---
+    if st.session_state.processing_game:
+        st.warning("Already processing… please wait.")
+        st.stop()
+    st.session_state.processing_game = True
+
     if not raw_text.strip():
         st.error("Paste play-by-play first.")
-    elif not current_roster:
+        st.session_state.processing_game = False
+        st.stop()
+
+    if not current_roster:
         st.error("Roster is empty. Add hitters first (and save).")
-    else:
+        st.session_state.processing_game = False
+        st.stop()
+
+    # --- safe to process ---
+
+        # --- build a stable game key from the pasted PBP so the same game can't be added twice ---
+        gkey = game_key_from_pbp(team_key, raw_text)
+
+        processed = season_team.get("_processed_game_keys", [])
+        if not isinstance(processed, list):
+            processed = []
+        processed_set = set(processed)
+
+        # If already processed, skip (prevents double-processing on reruns/clicks)
+        if gkey in processed_set:
+            st.warning("This exact play-by-play has already been processed for this team. Skipping.")
+            st.session_state.processing_game = False
+            st.stop()
+
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
         game_team = empty_stat_dict()
@@ -935,9 +974,20 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
                 game_team[combo_key] += 1
                 game_players[batter][combo_key] += 1
 
+        # ✅ Only after successful processing do we record the game as processed
         add_game_to_season(season_team, season_players, game_team, game_players)
-        games_played += 1
+
+        processed_set.add(gkey)
+        season_team["_processed_game_keys"] = sorted(processed_set)
+
+        # ✅ Derive games_played from processed list (never increment)
+        games_played = len(processed_set)
+
         save_season_totals(team_key, season_team, season_players, games_played)
+
+        st.session_state.processing_game = False
+        st.rerun()
+
 
         st.subheader("🧪 Debug: Recognized Balls in Play")
         if debug_samples:
@@ -1155,6 +1205,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
