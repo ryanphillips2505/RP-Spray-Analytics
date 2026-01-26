@@ -1022,13 +1022,15 @@ df_season = df_season[col_order]
 st.dataframe(df_season, use_container_width=True)
 
 csv_bytes = df_season.to_csv(index=False).encode("utf-8")
+
+safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
+
 st.download_button(
-    label="⬇️ Download Season CSV (Scouting Ready)",
+    label="📊 Download Season Report (Google Sheets Ready)",
     data=csv_bytes,
-    file_name=f"{TEAM_CODE}_{selected_team}_SEASON.csv",
+  file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
     mime="text/csv",
 )
-
 
 st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
 selectable_players = sorted(
@@ -1056,6 +1058,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
