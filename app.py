@@ -865,7 +865,6 @@ raw_text = st.text_area(
     f"Paste the full play-by-play for ONE game involving {selected_team}:",
     height=260,
 )
-
 # -----------------------------
 # PROCESS GAME
 # -----------------------------
@@ -873,25 +872,22 @@ if "processing_game" not in st.session_state:
     st.session_state.processing_game = False
 
 if st.button("📥 Process Game (ADD to Season Totals)"):
-    # --- session lock to prevent double-processing ---
     if st.session_state.processing_game:
         st.warning("Already processing… please wait.")
         st.stop()
+
     st.session_state.processing_game = True
+    try:
+        if not raw_text.strip():
+            st.error("Paste play-by-play first.")
+            st.stop()
 
-    if not raw_text.strip():
-        st.error("Paste play-by-play first.")
-        st.session_state.processing_game = False
-        st.stop()
+        if not current_roster:
+            st.error("Roster is empty. Add hitters first (and save).")
+            st.stop()
 
-    if not current_roster:
-        st.error("Roster is empty. Add hitters first (and save).")
-        st.session_state.processing_game = False
-        st.stop()
-
-    # --- safe to process ---
-
-        # --- build a stable game key from the pasted PBP so the same game can't be added twice ---
+        # --- SAFE TO PROCESS ---
+        # build stable key so the same PBP can't be added twice
         gkey = game_key_from_pbp(team_key, raw_text)
 
         processed = season_team.get("_processed_game_keys", [])
@@ -899,10 +895,8 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
             processed = []
         processed_set = set(processed)
 
-        # If already processed, skip (prevents double-processing on reruns/clicks)
         if gkey in processed_set:
             st.warning("This exact play-by-play has already been processed for this team. Skipping.")
-            st.session_state.processing_game = False
             st.stop()
 
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
@@ -917,7 +911,7 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
             clean_line = re.sub(r"\s+", " ", clean_line).strip()
             line_lower = clean_line.lower()
 
-            # ----- RUNNING EVENTS (SB / CS / DI) -----
+            # ----- RUNNING EVENTS (SB / CS / DI / PO / POCS) -----
             runner, total_key, base_key = parse_running_event(clean_line, current_roster)
             if runner and total_key:
                 game_team[total_key] += 1
@@ -974,67 +968,20 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
                 game_team[combo_key] += 1
                 game_players[batter][combo_key] += 1
 
-        # ✅ Only after successful processing do we record the game as processed
         add_game_to_season(season_team, season_players, game_team, game_players)
 
         processed_set.add(gkey)
         season_team["_processed_game_keys"] = sorted(processed_set)
-
-        # ✅ Derive games_played from processed list (never increment)
         games_played = len(processed_set)
 
         save_season_totals(team_key, season_team, season_players, games_played)
 
-        st.session_state.processing_game = False
+        st.success("✅ Game processed and added to season totals.")
         st.rerun()
 
+    finally:
+        st.session_state.processing_game = False
 
-        st.subheader("🧪 Debug: Recognized Balls in Play")
-        if debug_samples:
-            for row in debug_samples:
-                st.text(row)
-        else:
-            st.info("No hitters recognized with balls in play. Check roster name matching.")
-
-        st.subheader("📊 Team Spray – THIS GAME (Legacy)")
-        st.table([{"Location": loc, "Count": game_team[loc]} for loc in LOCATION_KEYS])
-
-        st.subheader("📌 Team Spray – THIS GAME (GB/FB by Location)")
-        st.table([{"Bucket": ck, "Count": game_team.get(ck, 0)} for ck in COMBO_KEYS])
-
-        st.subheader("🏃 Running Events – THIS GAME")
-        st.table([
-            {"Type": "SB", "Count": game_team.get("SB", 0)},
-            {"Type": "CS", "Count": game_team.get("CS", 0)},
-            {"Type": "DI", "Count": game_team.get("DI", 0)},
-            {"Type": "SB-2B", "Count": game_team.get("SB-2B", 0)},
-            {"Type": "SB-3B", "Count": game_team.get("SB-3B", 0)},
-            {"Type": "SB-H", "Count": game_team.get("SB-H", 0)},
-            {"Type": "CS-2B", "Count": game_team.get("CS-2B", 0)},
-            {"Type": "CS-3B", "Count": game_team.get("CS-3B", 0)},
-            {"Type": "CS-H", "Count": game_team.get("CS-H", 0)},
-            {"Type": "DI-2B", "Count": game_team.get("DI-2B", 0)},
-            {"Type": "DI-3B", "Count": game_team.get("DI-3B", 0)},
-            {"Type": "DI-H", "Count": game_team.get("DI-H", 0)},
-        ])
-
-        st.subheader("👤 Per-Player Spray – THIS GAME")
-        rows = []
-        for player in sorted(current_roster):
-            stats = game_players[player]
-            row = {"Player": player}
-            for loc in LOCATION_KEYS:
-                row[loc] = stats.get(loc, 0)
-            row["GB"] = stats.get("GB", 0)
-            row["FB"] = stats.get("FB", 0)
-            for ck in COMBO_KEYS:
-                row[ck] = stats.get(ck, 0)
-            for rk in RUN_KEYS:
-                row[rk] = stats.get(rk, 0)
-            rows.append(row)
-        st.dataframe(rows)
-
-        st.success("✅ Game processed and added to season totals. (Pasting same game twice will double count.)")
 
 # -----------------------------
 # SEASON OUTPUTS
@@ -1205,6 +1152,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
