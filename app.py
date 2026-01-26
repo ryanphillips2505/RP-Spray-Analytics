@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Optional, Tuple
 import pandas as pd   # ✅ MOVE IT HERE
 from io import BytesIO
+from openpyxl.utils import get_column_letter
+
 
 
 
@@ -1022,8 +1024,51 @@ safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
 # Excel bytes (clean scouting-ready)
 out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
-    df_season.to_excel(writer, index=False, sheet_name="Season")
+    sheet_name = "Season"
+    df_season.to_excel(writer, index=False, sheet_name=sheet_name)
+
+    ws = writer.book[sheet_name]
+
+    # 1) Freeze header row
+    ws.freeze_panes = "A2"
+
+    # 2) Bold header + center
+    from openpyxl.styles import Font, Alignment, PatternFill
+
+    header_font = Font(bold=True)
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")  # light header shade
+
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.alignment = header_align
+        cell.fill = header_fill
+
+    # 3) Set column widths (auto-fit style)
+    for col_idx, col_name in enumerate(df_season.columns, start=1):
+        col_letter = get_column_letter(col_idx)
+
+        # base width = header length
+        max_len = len(str(col_name))
+
+        # sample a chunk of rows so it doesn't get slow
+        sample = df_season[col_name].astype(str).head(60).tolist()
+        for v in sample:
+            if len(v) > max_len:
+                max_len = len(v)
+
+        # cap widths so it stays printable
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 22)
+
+    # 4) Optional: make numbers centered
+    num_align = Alignment(horizontal="center", vertical="center")
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.alignment = num_align
+
 excel_bytes = out.getvalue()
+
 
 col_dl1, col_dl2 = st.columns(2)
 
@@ -1069,6 +1114,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
