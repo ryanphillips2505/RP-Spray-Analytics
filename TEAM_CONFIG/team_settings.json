@@ -20,11 +20,11 @@
       "team_slug": "claremore",
       "logo_path": "assets/claremore/logo.png",
       "background_path": "assets/claremore/background.jpg",
-      "roster_file": "TEAM_CONFIG/rosters/claremore.txt",
-      "data_folder": "data/claremore"
+      "data_folder": "data/teams/claremore"
     }
   }
 }
+
 
 
 
