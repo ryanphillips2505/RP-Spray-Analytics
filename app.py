@@ -1,3 +1,4 @@
+# force rebuild
 import streamlit as st
 import os
 import json
@@ -1028,6 +1029,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
