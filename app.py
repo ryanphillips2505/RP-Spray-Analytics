@@ -1277,7 +1277,7 @@ st.markdown(
 col_reset, _ = st.columns([1, 3])
 
 with col_reset:
-    if st.button(f"Reset SEASON totals for {TEAM_CODE}", key="reset_season"):
+    if st.button(f"Reset SEASON totals", key="reset_season"):
         reset_season_totals(TEAM_CODE)
 
         db_reset_season(TEAM_CODE_SAFE, team_key)
@@ -1662,6 +1662,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
