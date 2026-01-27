@@ -1030,7 +1030,7 @@ def get_base64_image(path: str) -> str:
 PRIMARY = SETTINGS.get("primary_color", "#b91c1c")
 SECONDARY = SETTINGS.get("secondary_color", "#111111")
 
-LOGO_PATH = SETTINGS.get("logo_image", os.path.join("assets", "logo.png"))
+logo_path = (TEAM_CFG.get("logo_path") or settings.get("logo_image") or "").strip()
 BG_PATH = SETTINGS.get("background_image", os.path.join("assets", "background.jpg"))
 
 if TEAM_CFG:
@@ -1644,6 +1644,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
