@@ -112,8 +112,8 @@ if hashed == codes[code]["code_hash"]:
     st.session_state.team_code = codes[code]["team_code"]
     st.rerun()
 
-        else:
-            st.error("Invalid access code")
+    else:
+        st.error("Invalid access code")
 
     st.stop()
 
@@ -1591,6 +1591,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
