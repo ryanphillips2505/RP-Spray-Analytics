@@ -127,6 +127,7 @@ def require_team_access():
 
 
 
+
 TEAM_CODE, TEAM_CFG = require_team_access()
 TEAM_CFG = TEAM_CFG or {}
 
@@ -1600,6 +1601,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
