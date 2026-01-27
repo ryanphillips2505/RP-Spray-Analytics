@@ -68,6 +68,8 @@ def load_settings():
 
 
 SETTINGS = load_settings()
+settings = SETTINGS  # alias so the rest of the code can use `settings`
+
 
 # -----------------------------
 # ✅ MUST BE FIRST STREAMLIT CALL
@@ -1030,8 +1032,17 @@ def get_base64_image(path: str) -> str:
 PRIMARY = SETTINGS.get("primary_color", "#b91c1c")
 SECONDARY = SETTINGS.get("secondary_color", "#111111")
 
-logo_path = (TEAM_CFG.get("logo_path") or settings.get("logo_image") or "").strip()
-BG_PATH = SETTINGS.get("background_image", os.path.join("assets", "background.jpg"))
+LOGO_PATH = (
+    TEAM_CFG.get("logo_path")
+    or SETTINGS.get("logo_image")
+    or os.path.join("assets", "logo.png")
+)
+
+BG_PATH = (
+    TEAM_CFG.get("background_path")
+    or SETTINGS.get("background_image")
+    or os.path.join("assets", "background.jpg")
+)
 
 if TEAM_CFG:
     LOGO_PATH = TEAM_CFG.get("logo_path", LOGO_PATH)
@@ -1644,6 +1655,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
