@@ -17,6 +17,11 @@ from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
 from supabase import create_client, Client
 
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
 def hash_access_code(code: str) -> str:
     pepper = st.secrets["ACCESS_CODE_PEPPER"]
     raw = (code.strip() + pepper).encode("utf-8")
@@ -1614,6 +1619,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
