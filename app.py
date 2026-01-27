@@ -31,6 +31,33 @@ def hash_access_code(code: str) -> str:
     pepper = st.secrets["ACCESS_CODE_PEPPER"]
     raw = (code.strip() + pepper).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+def admin_set_access_code(team_lookup: str, new_plain_code: str) -> bool:
+    """
+    Updates team_access.code_hash for the given team (by team_code OR team_slug).
+    Returns True if update succeeds.
+    """
+    team_lookup = (team_lookup or "").strip().upper()
+    new_plain_code = (new_plain_code or "").strip()
+
+    if not team_lookup or not new_plain_code:
+        return False
+
+    new_hash = hash_access_code(new_plain_code).strip().lower()
+
+    # Try by team_code first
+    res = supabase.table("team_access").update(
+        {"code_hash": new_hash, "is_active": True}
+    ).eq("team_code", team_lookup).execute()
+
+    if res.data:
+        return True
+
+    # Fallback by team_slug
+    res2 = supabase.table("team_access").update(
+        {"code_hash": new_hash, "is_active": True}
+    ).eq("team_slug", team_lookup).execute()
+
+    return bool(res2.data)
 
 
 # -----------------------------
@@ -1254,6 +1281,34 @@ with st.sidebar:
         "STRICT MODE (only count plays with explicit fielder/location)",
         value=bool(SETTINGS.get("strict_mode_default", True)),
     )
+    st.markdown("---")
+    st.markdown("### 🔐 Admin: Change Access Code")
+
+    admin_pin_ok = st.text_input("Admin PIN", type="password") == st.secrets["ADMIN_PIN"]
+
+    if admin_pin_ok:
+        team_to_change = st.text_input("Team Code or Slug (e.g. MUSTANG)", value="")
+        new_code = st.text_input("New Access Code", type="password", value="")
+        new_code2 = st.text_input("Confirm New Access Code", type="password", value="")
+
+        if st.button("✅ Update Access Code"):
+            if not team_to_change.strip():
+                st.error("Enter a team code/slug.")
+            elif not new_code.strip():
+                st.error("Enter a new access code.")
+            elif new_code != new_code2:
+                st.error("Codes do not match.")
+            else:
+                ok = admin_set_access_code(team_to_change, new_code)
+                if ok:
+                    st.success("Access code updated.")
+                    load_team_codes.clear()  # clear cached codes
+                    st.rerun()
+                else:
+                    st.error("Update failed. Check team code/slug exists in Supabase.")
+    else:
+        st.caption("Admin PIN required.")
+
 
     st.markdown("---")
 
@@ -1832,6 +1887,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
