@@ -1084,6 +1084,25 @@ with st.sidebar:
 # TEAM SELECTION (SUPABASE - PERSISTENT)
 # -----------------------------
 st.subheader("🏟️ Team Selection")
+with st.expander("📦 Import existing .txt roster files into Supabase (one-time)"):
+    if st.button("Import roster files now"):
+        imported = 0
+        if os.path.exists(TEAM_ROSTERS_DIR):
+            for fn in os.listdir(TEAM_ROSTERS_DIR):
+                if fn.lower().endswith(".txt"):
+                    team_name = os.path.splitext(fn)[0]
+                    team_key = safe_team_key(team_name)
+                    path = os.path.join(TEAM_ROSTERS_DIR, fn)
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            roster_text = f.read()
+                    except Exception:
+                        roster_text = ""
+                    db_upsert_team(TEAM_CODE_SAFE, team_key, team_name, roster_text)
+                    imported += 1
+
+        st.success(f"Imported {imported} roster files into Supabase. Reloading…")
+        st.rerun()
 
 teams = db_list_teams(TEAM_CODE_SAFE)
 
@@ -1531,6 +1550,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
