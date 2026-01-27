@@ -183,8 +183,10 @@ TEAM_CFG = _load_team_cfg_from_file(TEAM_CODE) or {}
 # -----------------------------
 # TERMS OF USE (one-time per browser)
 # -----------------------------
-if "terms_accepted" not in st.session_state:
-    st.session_state.terms_accepted = False
+terms_key = f"terms_accepted_{TEAM_CODE}"
+if terms_key not in st.session_state:
+    st.session_state[terms_key] = False
+
 
 if not st.session_state.terms_accepted:
     st.markdown("### Terms of Use")
@@ -1768,6 +1770,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
