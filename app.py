@@ -1,4 +1,5 @@
 import streamlit as st
+st.cache_data.clear()
 import os
 import json
 import base64
@@ -1601,6 +1602,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
