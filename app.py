@@ -109,6 +109,40 @@ def load_team_codes() -> dict:
         return out
     except Exception:
         return {}
+def license_is_active(team_code: str) -> bool:
+    """
+    Returns True if this team has an active license (and not expired, if expires_at is set).
+    Table: licenses (team_code text, status text, expires_at timestamptz)
+    """
+    try:
+        res = (
+            supabase.table("licenses")
+            .select("status, expires_at")
+            .eq("team_code", str(team_code).strip().upper())
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        if not rows:
+            return False  # no row = not licensed
+
+        row = rows[0]
+        status = str(row.get("status", "")).strip().lower()
+        if status != "active":
+            return False
+
+        # Optional: expiration
+        exp = row.get("expires_at")
+        if exp:
+            from datetime import datetime, timezone
+            # Supabase returns ISO string typically
+            exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+            if exp_dt < datetime.now(timezone.utc):
+                return False
+
+        return True
+    except Exception:
+        return False
 
 def require_team_access():
     codes = load_team_codes()
@@ -1796,6 +1830,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
