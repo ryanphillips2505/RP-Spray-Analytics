@@ -1044,12 +1044,14 @@ h1.app-title {{
 }
 
 [data-testid="stAppViewContainer"] {
-  background:
-    linear-gradient(rgba(31,41,51,0.92), rgba(31,41,51,0.92)),
-    url("data:image/jpeg;base64,{BG_B64}") no-repeat center fixed !important;
-  background-size: 600px !important;
-  color: #f3f4f6 !important;
+    background:
+        linear-gradient(rgba(229,231,235,0.90),
+                        rgba(229,231,235,0.90)),
+        url("data:image/jpeg;base64,{BG_B64}") no-repeat center fixed;
+    background-size: 600px;
+    color: #111827;
 }
+
 
 
 </style>
@@ -1595,6 +1597,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
