@@ -114,26 +114,23 @@ def require_team_access():
 
     code_raw = st.text_input("Access Code", value="")
 
-if st.button("Enter into the door of Success"):
-    code = code_raw.strip().upper()
+    if st.button("Enter into the door of Success"):
+        code = code_raw.strip().upper()
 
-    if not code:
-        st.error("Enter an access code")
-    else:
-        hashed = hash_access_code(code).strip().lower()
-        row = codes.get(code)
-
-        stored = str((row or {}).get("code_hash", "")).strip().lower()
-
-        if row and hashed == stored:
-            # store the real team_code (YUKON / OCS / CLAREMORE)
-            st.session_state.team_code = str(row.get("team_code", "")).strip().upper()
-            st.rerun()
+        if not code:
+            st.error("Enter an access code")
         else:
-            st.error("Invalid access code")
+            hashed = hash_access_code(code).strip().lower()
+            row = codes.get(code)
 
+            stored = str((row or {}).get("code_hash", "")).strip().lower()
 
-  
+            if row and hashed == stored:
+                # store the real team_code (YUKON / OCS / CLAREMORE)
+                st.session_state.team_code = str(row.get("team_code", "")).strip().upper()
+                st.rerun()
+            else:
+                st.error("Invalid access code")
 
     st.stop()
     return None, None
@@ -1614,6 +1611,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
