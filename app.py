@@ -75,7 +75,7 @@ settings = SETTINGS  # alias so the rest of the code can use `settings`
 # ✅ MUST BE FIRST STREAMLIT CALL
 # -----------------------------
 st.set_page_config(
-    page_title=SETTINGS.get("app_title", "RP Spray Analytics"),
+    page_title=SETTINGS.get("app_title", "RP Spray Charts"),
     page_icon="⚾",
     layout="wide",
 )
@@ -1661,6 +1661,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
