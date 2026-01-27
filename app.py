@@ -1,3 +1,8 @@
+# RP Spray Analytics
+# Copyright © 2026 Ryan Phillips
+# All rights reserved.
+# Unauthorized copying, distribution, or resale prohibited.
+
 import streamlit as st
 st.cache_data.clear()
 import os
@@ -1730,6 +1735,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
