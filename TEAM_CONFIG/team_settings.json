@@ -3,27 +3,37 @@
     "team_name": "Oklahoma Christian Schools",
     "team_slug": "ocs",
     "team_code": "OCS",
-    "logo_path": "assets/ocs/ocslogo.png",
-    "background_path": "assets/ocs/ocsbackground.jpg",
     "data_folder": "data/teams/OCS"
   },
   "claremore": {
     "team_name": "Claremore High School",
     "team_slug": "claremore",
     "team_code": "CLAREMORE",
-    "logo_path": "assets/claremore/logo.png",
-    "background_path": "assets/claremore/background.jpg",
     "data_folder": "data/teams/CLAREMORE"
   },
   "yukon": {
     "team_name": "Yukon High School",
     "team_slug": "yukon",
     "team_code": "YUKON",
-    "logo_path": "assets/yukon/logo.png",
-    "background_path": "assets/yukon/background.jpg",
     "data_folder": "data/teams/YUKON"
   }
+  ,
+  "team_branding": {
+    "YUKON": {
+      "logo_path": "assets/yukon/logo.png",
+      "background_path": "assets/yukon/background.jpg"
+    },
+    "OCS": {
+      "logo_path": "assets/ocs/logo.png",
+      "background_path": "assets/ocs/background.jpg"
+    },
+    "CLAREMORE": {
+      "logo_path": "assets/claremore/logo.png",
+      "background_path": "assets/claremore/background.jpg"
+    }
+  }
 }
+
 
 
 
