@@ -907,6 +907,16 @@ def db_get_team(team_code: str, team_key: str):
         st.stop()
 
 
+def db_get_roster(team_code: str, team_key: str) -> str:
+    """
+    Returns roster_text for a team, or empty string if none exists.
+    """
+    team = db_get_team(team_code, team_key)
+    if team and team.get("roster_text"):
+        return team["roster_text"]
+    return ""
+
+
 def db_upsert_team(team_code: str, team_key: str, team_name: str, roster_text: str):
     """
     Upserts one roster row per (team_code, team_key).
@@ -1530,6 +1540,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
