@@ -97,25 +97,28 @@ def require_team_access():
     if "team_code" not in st.session_state:
         st.session_state.team_code = None
 
+    # ✅ Already logged in
     if st.session_state.team_code in codes:
         return st.session_state.team_code, codes[st.session_state.team_code]
 
+    # 🔒 Login screen
     st.title("Welcome to the Jungle of RP Spray Analytics")
     st.markdown("### Enter Access Code")
 
     code = st.text_input("Access Code").strip().upper()
 
-    
-if st.button("Enter into the door of Success"):
-    hashed = hash_access_code(code)
+    if st.button("Enter into the door of Success"):
+        hashed = hash_access_code(code)
 
-    if code in codes and hashed == codes[code]["code_hash"]:
-        st.session_state.team_code = codes[code]["team_code"]
-        st.rerun()
-    else:
-        st.error("Invalid access code")
+        if code in codes and hashed == codes[code]["code_hash"]:
+            st.session_state.team_code = codes[code]["team_code"]
+            st.rerun()
+        else:
+            st.error("Invalid access code")
 
+    # ⛔ Always stop execution AND return placeholders
     st.stop()
+    return None, None
 
 
 TEAM_CODE, TEAM_CFG = require_team_access()
@@ -1591,6 +1594,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
