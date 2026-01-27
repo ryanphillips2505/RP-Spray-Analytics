@@ -738,7 +738,8 @@ def supabase_health_check_or_stop():
     try:
         supa_execute_with_retry(supabase.table("season_totals").select("id").limit(1))
         supa_execute_with_retry(supabase.table("processed_games").select("id").limit(1))
-        supa_execute_with_retry(supabase.table("team_rosters").select("id").limit(1))
+        supa_execute_with_retry(supabase.table("team_rosters").select("team_code").limit(1))
+
 
         return True
     except Exception as e:
@@ -1532,6 +1533,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
