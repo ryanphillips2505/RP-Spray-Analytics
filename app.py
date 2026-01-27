@@ -112,7 +112,7 @@ def load_team_codes() -> dict:
 
 def require_team_access():
     codes = load_team_codes()
-    
+
     if "team_code" not in st.session_state:
         st.session_state.team_code = None
 
@@ -134,12 +134,16 @@ def require_team_access():
         else:
             hashed = hash_access_code(code).strip().lower()
             row = codes.get(code)
-
             stored = str((row or {}).get("code_hash", "")).strip().lower()
 
             if row and hashed == stored:
-                # store the real team_code (YUKON / OCS / CLAREMORE)
-                st.session_state.team_code = str(row.get("team_code", "")).strip().upper()
+                team_code = str(row.get("team_code", "")).strip().upper()
+
+                if not license_is_active(team_code):
+                    st.error("License inactive. Contact admin.")
+                    st.stop()
+
+                st.session_state.team_code = team_code
                 st.rerun()
             else:
                 st.error("Invalid access code")
@@ -1792,6 +1796,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
