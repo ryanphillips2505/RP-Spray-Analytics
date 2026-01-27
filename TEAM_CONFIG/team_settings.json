@@ -1,39 +1,31 @@
-{
-  "app_title": "RP Spray Analytics",
-  "subtitle": "Coaches that want to win, WILL put in the time",
-  "primary_color": "#b91c1c",
-  "secondary_color": "#111111",
-  "background_image": "assets/background.jpg",
-  "logo_image": "assets/logo.png",
-  "strict_mode_default": true,
-
-  "teams": {
-    "ocs": {
-      "team_name": "Oklahoma Christian Schools",
-      "team_slug": "ocs",
-      "team_code": "OCS",
-      "logo_path": "assets/ocs/ocslogo.png",
-      "background_path": "assets/ocs/ocsbackground.jpg",
-      "data_folder": "data/teams/OCS"
-    },
-    "claremore": {
-      "team_name": "Claremore High School",
-      "team_slug": "claremore",
-      "team_code": "CLARE2026",
-      "logo_path": "assets/claremore/logo.png",
-      "background_path": "assets/claremore/background.jpg",
-      "data_folder": "data/teams/CLARE2026"
-    },
-    "yukon": {
-      "team_name": "Yukon High School",
-      "team_slug": "yukon",
-      "team_code": "YUKON2026",
-      "logo_path": "assets/yukon/logo.png",
-      "background_path": "assets/yukon/background.jpg",
-      "data_folder": "data/teams/YUKON2026"
-    }
+"teams": {
+  "ocs": {
+    "team_name": "Oklahoma Christian Schools",
+    "team_slug": "ocs",
+    "team_code": "OCS",
+    "logo_path": "assets/ocs/ocslogo.png",
+    "background_path": "assets/ocs/ocsbackground.jpg",
+    "data_folder": "data/teams/OCS"
+  },
+  "claremore": {
+    "team_name": "Claremore High School",
+    "team_slug": "claremore",
+    "team_code": "CLAREMORE",
+    "logo_path": "assets/claremore/logo.png",
+    "background_path": "assets/claremore/background.jpg",
+    "data_folder": "data/teams/CLAREMORE"
+  },
+  "yukon": {
+    "team_name": "Yukon High School",
+    "team_slug": "yukon",
+    "team_code": "YUKON",
+    "logo_path": "assets/yukon/logo.png",
+    "background_path": "assets/yukon/background.jpg",
+    "data_folder": "data/teams/YUKON"
   }
 }
+
+
 
 
 
