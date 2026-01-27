@@ -1421,7 +1421,26 @@ if st.session_state.processing_game:
         st.session_state.processing_started_at = 0.0
 
 
-if st.button("📥 Process Game (ADD to Season Totals)"):
+st.markdown(
+    """
+    <style>
+    div[data-testid="stButton"] button[data-key="process_game"] {
+        background-color: #16a34a !important;  /* bright green */
+        color: white !important;
+        border: 1px solid #16a34a !important;
+        font-weight: 700;
+    }
+    div[data-testid="stButton"] button[data-key="process_game"]:hover {
+        background-color: #15803d !important;
+        border-color: #15803d !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+if st.button("Process Game (ADD to Season Totals)", key="process_game"):
+
     if st.session_state.processing_game:
         st.warning("Already processing… please wait.")
         st.stop()
@@ -1685,6 +1704,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
