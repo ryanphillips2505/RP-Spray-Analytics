@@ -1439,7 +1439,33 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if st.button("Process Game (ADD to Season Totals)", key="process_game"):
+st.markdown(
+    """
+    <style>
+    /* Only the button inside this wrapper gets styled */
+    #process-wrap button {
+        background: #00c853 !important;   /* bright green */
+        color: white !important;
+        border: 0 !important;
+        font-weight: 700 !important;
+        border-radius: 10px !important;
+        padding: 0.6rem 1rem !important;
+    }
+    #process-wrap button:hover {
+        background: #00b84a !important;
+        color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div id="process-wrap">', unsafe_allow_html=True)
+process_clicked = st.button("📥 Process Game (ADD to Season Totals)", key="process_game_btn")
+st.markdown("</div>", unsafe_allow_html=True)
+
+if process_clicked:
+
 
     if st.session_state.processing_game:
         st.warning("Already processing… please wait.")
@@ -1704,6 +1730,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
