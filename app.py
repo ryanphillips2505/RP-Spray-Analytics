@@ -22,12 +22,6 @@ def hash_access_code(code: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-st.write("OCS hash:", hash_access_code("OCS"))
-st.write("CLAREMORE hash:", hash_access_code("CLAREMORE"))
-st.write("YUKON hash:", hash_access_code("YUKON"))
-st.stop()
-
-
 # -----------------------------
 # PATHS / FOLDERS
 # -----------------------------
@@ -1594,6 +1588,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
