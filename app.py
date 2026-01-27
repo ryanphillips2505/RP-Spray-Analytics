@@ -21,6 +21,9 @@ def hash_access_code(code: str) -> str:
     raw = (code.strip() + pepper).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
+st.write("YUKON hash:", hash_access_code("YUKON"))
+st.stop()
+
 
 # -----------------------------
 # PATHS / FOLDERS
@@ -1601,6 +1604,7 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
+
 
 
 
