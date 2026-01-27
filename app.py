@@ -1770,6 +1770,29 @@ else:
 
     st.table(indiv_rows)
 
+# -----------------------------
+# FOOTER (Copyright)
+# -----------------------------
+st.markdown(
+    """
+    <style>
+    .rp-footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(0,0,0,0.12);
+        text-align: center;
+        font-size: 0.85rem;
+        color: rgba(0,0,0,0.55);
+    }
+    </style>
+
+    <div class="rp-footer">
+        © 2026 RP Spray Analytics. All rights reserved.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 
 
