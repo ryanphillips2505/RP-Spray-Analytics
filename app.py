@@ -5,26 +5,16 @@ import base64
 import re
 import hashlib
 import httpx
-import time  # ✅ used for anti-stuck processing lock + failsafe unlock
+import time  # anti-stuck processing lock + failsafe unlock
 from datetime import datetime
 from typing import Optional, Tuple
+
 import pandas as pd
 from io import BytesIO
 
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
-from openpyxl.styles import PatternFill
 from supabase import create_client, Client
-
-
-def normalize_pbp(text: str) -> str:
-    return "\n".join([ln.strip() for ln in (text or "").strip().splitlines() if ln.strip()])
-
-
-def game_key_from_pbp(team_key: str, pbp_text: str) -> str:
-    norm = normalize_pbp(pbp_text)
-    h = hashlib.sha1((team_key + "||" + norm).encode("utf-8")).hexdigest()
-    return f"pbp_sha1_{h}"
 
 
 # -----------------------------
@@ -32,6 +22,7 @@ def game_key_from_pbp(team_key: str, pbp_text: str) -> str:
 # -----------------------------
 SETTINGS_PATH = os.path.join("TEAM_CONFIG", "team_settings.json")
 ASSETS_DIR = "assets"
+os.makedirs(ASSETS_DIR, exist_ok=True)
 
 # FORCE include team data folders (Streamlit Cloud quirk) — but don't crash if missing
 try:
@@ -39,8 +30,6 @@ try:
         _ = os.listdir("data/teams")
 except Exception:
     pass
-
-os.makedirs(ASSETS_DIR, exist_ok=True)
 
 
 # -----------------------------
@@ -69,11 +58,18 @@ def load_settings():
 
 SETTINGS = load_settings()
 
+# -----------------------------
+# ✅ MUST BE FIRST STREAMLIT CALL
+# -----------------------------
+st.set_page_config(
+    page_title=SETTINGS.get("app_title", "RP Spray Analytics"),
+    page_icon="⚾",
+    layout="wide",
+)
+
 # ============================
 # ACCESS CODE GATE
 # ============================
-
-SETTINGS_PATH = os.path.join("TEAM_CONFIG", "team_settings.json")
 
 
 @st.cache_data(show_spinner=False)
@@ -84,6 +80,7 @@ def load_team_codes() -> dict:
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         codes = data.get("codes", {}) or {}
+        # normalize keys to uppercase
         return {str(k).strip().upper(): v for k, v in codes.items()}
     except Exception:
         return {}
@@ -118,358 +115,17 @@ TEAM_CFG = TEAM_CFG or {}
 
 # -----------------------------
 # ✅ TEAM-ISOLATED STORAGE (folders only for rosters; totals are in Supabase)
-# Put this RIGHT AFTER the access gate.
 # -----------------------------
 TEAM_CODE_SAFE = str(TEAM_CODE).strip().upper()
 TEAM_ROOT = os.path.join("data", "teams", TEAM_CODE_SAFE)
 TEAM_ROSTERS_DIR = os.path.join(TEAM_ROOT, "rosters")
 TEAM_SEASON_DIR = os.path.join(TEAM_ROOT, "season_totals")  # legacy folder; not used for season totals anymore
-
 os.makedirs(TEAM_ROSTERS_DIR, exist_ok=True)
 os.makedirs(TEAM_SEASON_DIR, exist_ok=True)
 
-# -----------------------------
-# SUPABASE (persistent storage)
-# -----------------------------
-SUPABASE_SETUP_SQL = """
--- ============================
--- SEASON TOTALS (one row per team_code + team_key)
--- ============================
-create table if not exists public.season_totals (
-  id bigserial primary key,
-  team_code text not null,
-  team_key  text not null,
-  data jsonb not null default '{}'::jsonb,
-  games_played integer not null default 0,
-  updated_at timestamptz not null default now()
-);
-
-create unique index if not exists season_totals_unique
-  on public.season_totals (team_code, team_key);
-
-create index if not exists season_totals_team_idx
-  on public.season_totals (team_code, team_key);
-
--- ============================
--- PROCESSED GAMES (hard dedupe)
--- ============================
-create table if not exists public.processed_games (
-  id bigserial primary key,
-  team_code text not null,
-  team_key  text not null,
-  game_hash text not null,
-  created_at timestamptz not null default now()
-);
-
-create unique index if not exists processed_games_unique
-  on public.processed_games (team_code, team_key, game_hash);
-
-create index if not exists processed_games_team_idx
-  on public.processed_games (team_code, team_key);
-""".strip()
-
-
-def _show_db_error(e: Exception, label: str):
-    st.error(f"**{label}**")
-    # Try to expose useful fields from PostgREST APIError (Streamlit redacts the default)
-    try:
-        parts = [f"type: {type(e)}"]
-        for attr in ("message", "details", "hint", "code"):
-            if hasattr(e, attr):
-                val = getattr(e, attr)
-                if val:
-                    parts.append(f"{attr}: {val}")
-        st.code("\n".join(parts), language="text")
-    except Exception:
-        st.write(str(e))
-
-
-def _render_supabase_fix_block():
-    st.error("Supabase tables are missing or mismatched (season_totals / processed_games).")
-    st.markdown("### Fix (copy/paste into Supabase → SQL Editor → Run)")
-    st.code(SUPABASE_SETUP_SQL, language="sql")
-    st.markdown(
-        """
-**Then refresh your Streamlit app.**  
-If it still errors after running the SQL, your Streamlit **secrets** are wrong.
-"""
-    )
-
-
-@st.cache_resource(show_spinner=False)
-def get_supabase() -> Client:
-    url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_SERVICE_KEY", "").strip()  # service role key (server-side only)
-    if not url or not key:
-        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in Streamlit secrets.")
-    return create_client(url, key)
-
-
-supabase = get_supabase()
-
-
-def supa_execute_with_retry(builder, tries: int = 5):
-    """
-    Retries Supabase .execute() on transient network issues.
-    """
-    last_err = None
-    for i in range(tries):
-        try:
-            return builder.execute()
-        except (httpx.ReadError, httpx.ConnectError, httpx.ReadTimeout) as e:
-            last_err = e
-            time.sleep(0.6 * (i + 1))  # simple backoff
-    raise last_err
-
-
-def supabase_health_check_or_stop():
-    """
-    Don’t let the whole app crash with a redacted error.
-    If tables/columns don’t exist, show the exact SQL to fix it and stop.
-    """
-    try:
-        # Minimal probes
-        supa_execute_with_retry(supabase.table("season_totals").select("id").limit(1))
-        supa_execute_with_retry(supabase.table("processed_games").select("id").limit(1))
-        return True
-    except Exception as e:
-        _show_db_error(e, "Supabase not ready")
-        _render_supabase_fix_block()
-        st.stop()
-
-
-# Call once after we have supabase client
-supabase_health_check_or_stop()
-
-
-def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str]):
-    """
-    Returns (season_team, season_players, games_played, processed_hashes_set)
-    """
-    season_team = empty_stat_dict()
-    season_players = {p: empty_stat_dict() for p in current_roster}
-    games_played = 0
-
-    try:
-        res = (
-            supabase.table("season_totals")
-            .select("data, games_played")
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
-            .limit(1)
-            .execute()
-        )
-    except Exception as e:
-        _show_db_error(e, "Supabase SELECT failed on season_totals")
-        _render_supabase_fix_block()
-        st.stop()
-
-    if res.data:
-        row = res.data[0]
-        payload = row.get("data") or {}
-        raw_team = payload.get("team") or {}
-        raw_players = payload.get("players") or {}
-
-        season_team = ensure_all_keys(raw_team if isinstance(raw_team, dict) else {})
-        season_players = {}
-
-        if isinstance(raw_players, dict):
-            for p, stats in raw_players.items():
-                season_players[p] = ensure_all_keys(stats) if isinstance(stats, dict) else empty_stat_dict()
-
-        # ensure roster players exist
-        for p in current_roster:
-            if p not in season_players:
-                season_players[p] = empty_stat_dict()
-
-        games_played = int(row.get("games_played") or 0)
-
-    try:
-        pres = (
-            supabase.table("processed_games")
-            .select("game_hash")
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
-            .execute()
-        )
-    except Exception as e:
-        _show_db_error(e, "Supabase SELECT failed on processed_games")
-        _render_supabase_fix_block()
-        st.stop()
-
-    processed_set = set()
-    if pres.data:
-        processed_set = {r["game_hash"] for r in pres.data if r.get("game_hash")}
-
-    return season_team, season_players, games_played, processed_set
-
-
-def db_save_season_totals(team_code: str, team_key: str, season_team: dict, season_players: dict, games_played: int):
-    """
-    UPSERT one row per (team_code, team_key)
-    Requires UNIQUE(team_code, team_key) on season_totals
-    """
-    payload = {"team": season_team, "players": season_players}
-
-    try:
-        (
-            supabase.table("season_totals")
-            .upsert(
-                {
-                    "team_code": team_code,
-                    "team_key": team_key,
-                    "data": payload,
-                    "games_played": int(games_played),
-                    "updated_at": datetime.utcnow().isoformat(),
-                },
-                on_conflict="team_code,team_key",
-            )
-            .execute()
-        )
-    except Exception as e:
-        _show_db_error(e, "Supabase UPSERT failed on season_totals")
-        _render_supabase_fix_block()
-        st.stop()
-
-
-def db_try_mark_game_processed(team_code: str, team_key: str, game_hash: str) -> bool:
-    """
-    Returns True if we successfully marked as processed (new),
-    False if it already existed.
-    Requires UNIQUE(team_code, team_key, game_hash) on processed_games
-    """
-    try:
-        supabase.table("processed_games").insert(
-            {"team_code": team_code, "team_key": team_key, "game_hash": game_hash}
-        ).execute()
-        return True
-    except Exception:
-        # Unique constraint trip => already processed (or any insert error)
-        return False
-
-
-# ✅ 2A) ROLLBACK HELPER (UNMARK GAME IF PROCESSING FAILS)
-def db_unmark_game_processed(team_code: str, team_key: str, game_hash: str):
-    try:
-        supa_execute_with_retry(
-            supabase.table("processed_games")
-            .delete()
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
-            .eq("game_hash", game_hash)
-        )
-    except Exception:
-        # Worst case: row stays marked; you can reset season for that team if needed.
-        pass
-
-
-def db_reset_season(team_code: str, team_key: str):
-    try:
-        supabase.table("season_totals").delete().eq("team_code", team_code).eq("team_key", team_key).execute()
-        supabase.table("processed_games").delete().eq("team_code", team_code).eq("team_key", team_key).execute()
-    except Exception as e:
-        _show_db_error(e, "Supabase RESET failed")
-        _render_supabase_fix_block()
-        st.stop()
-
 
 # -----------------------------
-# PAGE CONFIG
-# -----------------------------
-st.set_page_config(
-    page_title=SETTINGS["app_title"],
-    page_icon="⚾",
-    layout="wide",
-)
-
-
-def get_base64_image(path: str) -> str:
-    if not path or not os.path.exists(path):
-        return ""
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
-# --- Branding (fallback + team overrides) ---
-PRIMARY = SETTINGS["primary_color"]
-SECONDARY = SETTINGS["secondary_color"]
-
-LOGO_PATH = SETTINGS.get("logo_image", "assets/logo.png")
-BG_PATH = SETTINGS.get("background_image", "assets/background.jpg")
-
-if TEAM_CFG:
-    LOGO_PATH = TEAM_CFG.get("logo_path", LOGO_PATH)
-    BG_PATH = TEAM_CFG.get("background_path", BG_PATH)
-
-BG_B64 = get_base64_image(BG_PATH)
-
-# -----------------------------
-# FONTS (force load)
-# -----------------------------
-st.markdown(
-    """
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Jersey+10&display=swap" rel="stylesheet">
-    """,
-    unsafe_allow_html=True,
-)
-
-# -----------------------------
-# STYLES (sharp + bordered title)
-# -----------------------------
-st.markdown(
-    f"""
-    <style>
-    h1.app-title {{
-        font-family: 'Black Ops One', 'Jersey 10', sans-serif !important;
-        font-size: 6.0rem !important;
-        color: {PRIMARY} !important;
-        text-align: center !important;
-        letter-spacing: 0.20em !important;
-        text-transform: uppercase !important;
-        -webkit-text-stroke: 2.5px #000000;
-        text-shadow:
-            2px 2px 0 #000000,
-            -2px 2px 0 #000000,
-            2px -2px 0 #000000,
-            -2px -2px 0 #000000;
-        margin-top: -10px !important;
-        margin-bottom: 12px !important;
-    }}
-
-    .app-subtitle {{
-        font-size: 1.10rem !important;
-        font-weight: 700 !important;
-        letter-spacing: 0.05em !important;
-        color: #111827 !important;
-        opacity: 0.97 !important;
-        text-align: center !important;
-        margin-bottom: 18px !important;
-    }}
-
-    [data-testid="stAppViewContainer"] {{
-        background:
-            linear-gradient(rgba(229,231,235,0.90),
-                            rgba(229,231,235,0.90)),
-            url("data:image/jpeg;base64,{BG_B64}") no-repeat center fixed;
-        background-size: 600px;
-        color: #111827;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# -----------------------------
-# HEADER
-# -----------------------------
-st.markdown(f"<h1 class='app-title'>{SETTINGS['app_title']}</h1>", unsafe_allow_html=True)
-st.markdown(f"<div class='app-subtitle'>{SETTINGS['subtitle']}</div>", unsafe_allow_html=True)
-st.markdown("---")
-
-# -----------------------------
-# ENGINE CONSTANTS
+# ENGINE CONSTANTS (MUST EXIST BEFORE empty_stat_dict/db_load)
 # -----------------------------
 LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "Bunt", "Sac Bunt", "UNKNOWN"]
 BALLTYPE_KEYS = ["GB", "FB"]
@@ -483,8 +139,48 @@ RUN_KEYS = [
     "DI", "DI-2B", "DI-3B", "DI-H",
 ]
 
+
 # -----------------------------
-# REGEX / PATTERNS (YOUR ENGINE)
+# STAT HELPERS
+# -----------------------------
+def empty_stat_dict():
+    d = {loc: 0 for loc in LOCATION_KEYS}
+    for k in BALLTYPE_KEYS:
+        d[k] = 0
+    for ck in COMBO_KEYS:
+        d[ck] = 0
+    for rk in RUN_KEYS:
+        d[rk] = 0
+    return d
+
+
+def ensure_all_keys(d: dict):
+    for loc in LOCATION_KEYS:
+        d.setdefault(loc, 0)
+    for k in BALLTYPE_KEYS:
+        d.setdefault(k, 0)
+    for ck in COMBO_KEYS:
+        d.setdefault(ck, 0)
+    for rk in RUN_KEYS:
+        d.setdefault(rk, 0)
+    return d
+
+
+# -----------------------------
+# PBP NORMALIZATION + GAME HASH
+# -----------------------------
+def normalize_pbp(text: str) -> str:
+    return "\n".join([ln.strip() for ln in (text or "").strip().splitlines() if ln.strip()])
+
+
+def game_key_from_pbp(team_key: str, pbp_text: str) -> str:
+    norm = normalize_pbp(pbp_text)
+    h = hashlib.sha1((team_key + "||" + norm).encode("utf-8")).hexdigest()
+    return f"pbp_sha1_{h}"
+
+
+# -----------------------------
+# REGEX / PATTERNS (ENGINE)
 # -----------------------------
 GB_REGEX = [
     re.compile(r"\bground(?:s|ed)?\b"),
@@ -631,15 +327,13 @@ DI_REGEX_2 = re.compile(
 )
 
 DI_REGEX_BARE = re.compile(r"\bdefensive\s+indifference\b", re.IGNORECASE)
-
-RUNNER_TAG_REGEX = re.compile(r"\bR([123])\b", re.IGNORECASE)
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
 
 def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
     if not base_raw:
         return prefix
-    b = base_raw.strip().lower()
+    b = base_raw.strip().lower().strip("()").strip()
     if b in ["2nd", "second"]:
         return f"{prefix}-2B"
     if b in ["3rd", "third"]:
@@ -664,33 +358,10 @@ def starts_like_name(token: str) -> bool:
     return t[:1].isalpha() and t not in BAD_FIRST_TOKENS
 
 
-def empty_stat_dict():
-    d = {loc: 0 for loc in LOCATION_KEYS}
-    for k in BALLTYPE_KEYS:
-        d[k] = 0
-    for ck in COMBO_KEYS:
-        d[ck] = 0
-    for rk in RUN_KEYS:
-        d[rk] = 0
-    return d
-
-
-def ensure_all_keys(d: dict):
-    for loc in LOCATION_KEYS:
-        d.setdefault(loc, 0)
-    for k in BALLTYPE_KEYS:
-        d.setdefault(k, 0)
-    for ck in COMBO_KEYS:
-        d.setdefault(ck, 0)
-    for rk in RUN_KEYS:
-        d.setdefault(rk, 0)
-    return d
-
-
 def overall_confidence_score(conf_val: int):
     if conf_val >= 4:
         return "high"
-    elif conf_val >= 2:
+    if conf_val >= 2:
         return "medium"
     return "low"
 
@@ -794,6 +465,7 @@ def is_ball_in_play(line_lower: str) -> bool:
     if not ll:
         return False
 
+    # exclude non-BIP and running events
     if any(kw in ll for kw in [
         "hit by pitch", "hit-by-pitch", "hit batsman",
         "walks", "walked", " base on balls", "intentional walk",
@@ -825,6 +497,7 @@ def is_ball_in_play(line_lower: str) -> bool:
     if any(kw in ll for kw in bip_outcomes):
         return True
 
+    # fallback: any explicit fielder/location markers
     fielder_markers = [
         "left fielder", "center fielder", "right fielder",
         "shortstop", "second baseman", "third baseman", "first baseman",
@@ -837,9 +510,6 @@ def is_ball_in_play(line_lower: str) -> bool:
 
 
 def classify_ball_type(line_lower: str):
-    reasons = []
-    conf = 0
-
     if "bunt" in line_lower:
         return "GB", 3, ["Contains 'bunt' → GB"]
 
@@ -859,7 +529,7 @@ def classify_ball_type(line_lower: str):
         if rx.search(line_lower):
             return "FB", 2, [f"Matched FB regex: {rx.pattern}"]
 
-    return None, conf, reasons
+    return None, 0, []
 
 
 def classify_location(line_lower: str, strict_mode: bool = False):
@@ -887,7 +557,7 @@ def classify_location(line_lower: str, strict_mode: bool = False):
     add_candidates(P_PATTERNS, "P", "P")
 
     if candidates:
-        idx, loc, reason = min(candidates, key=lambda x: x[0])
+        _, loc, reason = min(candidates, key=lambda x: x[0])
         return loc, 3, [reason]
 
     if strict_mode:
@@ -941,50 +611,6 @@ def save_roster_text(path: str, text: str):
         f.write(text.strip() + "\n" if text.strip() else "")
 
 
-# -----------------------------
-# LEGACY LOCAL SEASON FILES (NOT USED ON STREAMLIT CLOUD ANYMORE)
-# -----------------------------
-def season_file_for_team(team_key: str) -> str:
-    return os.path.join(TEAM_SEASON_DIR, f"{team_key}_spray_totals.json")
-
-
-def load_season_totals(team_key: str, current_roster):
-    filename = season_file_for_team(team_key)
-
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r") as f:
-                data = json.load(f)
-            raw_team = data.get("team", {})
-            raw_players = data.get("players", {})
-            meta = data.get("meta", {})
-            games_played = meta.get("games_played", 0)
-        except Exception:
-            raw_team, raw_players, games_played = {}, {}, 0
-    else:
-        raw_team, raw_players, games_played = {}, {}, 0
-
-    season_team = ensure_all_keys(raw_team if isinstance(raw_team, dict) else {})
-    season_players = {}
-
-    if isinstance(raw_players, dict):
-        for p, stat_dict in raw_players.items():
-            season_players[p] = ensure_all_keys(stat_dict) if isinstance(stat_dict, dict) else empty_stat_dict()
-
-    for p in current_roster:
-        if p not in season_players:
-            season_players[p] = empty_stat_dict()
-
-    return season_team, season_players, games_played
-
-
-def save_season_totals(team_key: str, season_team, season_players, games_played: int):
-    filename = season_file_for_team(team_key)
-    data = {"meta": {"games_played": games_played}, "team": season_team, "players": season_players}
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=2)
-
-
 def add_game_to_season(season_team, season_players, game_team, game_players):
     for key in LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS:
         season_team[key] = season_team.get(key, 0) + game_team.get(key, 0)
@@ -997,6 +623,338 @@ def add_game_to_season(season_team, season_players, game_team, game_players):
 
 
 # -----------------------------
+# SUPABASE (persistent storage)
+# -----------------------------
+SUPABASE_SETUP_SQL = """
+-- ============================
+-- SEASON TOTALS (one row per team_code + team_key)
+-- ============================
+create table if not exists public.season_totals (
+  id bigserial primary key,
+  team_code text not null,
+  team_key  text not null,
+  data jsonb not null default '{}'::jsonb,
+  games_played integer not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists season_totals_unique
+  on public.season_totals (team_code, team_key);
+
+create index if not exists season_totals_team_idx
+  on public.season_totals (team_code, team_key);
+
+-- ============================
+-- PROCESSED GAMES (hard dedupe)
+-- ============================
+create table if not exists public.processed_games (
+  id bigserial primary key,
+  team_code text not null,
+  team_key  text not null,
+  game_hash text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists processed_games_unique
+  on public.processed_games (team_code, team_key, game_hash);
+
+create index if not exists processed_games_team_idx
+  on public.processed_games (team_code, team_key);
+""".strip()
+
+
+def _show_db_error(e: Exception, label: str):
+    st.error(f"**{label}**")
+    try:
+        parts = [f"type: {type(e)}"]
+        for attr in ("message", "details", "hint", "code"):
+            if hasattr(e, attr):
+                val = getattr(e, attr)
+                if val:
+                    parts.append(f"{attr}: {val}")
+        st.code("\n".join(parts), language="text")
+    except Exception:
+        st.write(str(e))
+
+
+def _render_supabase_fix_block():
+    st.error("Supabase tables are missing or mismatched (season_totals / processed_games).")
+    st.markdown("### Fix (copy/paste into Supabase → SQL Editor → Run)")
+    st.code(SUPABASE_SETUP_SQL, language="sql")
+    st.markdown(
+        """
+**Then refresh your Streamlit app.**  
+If it still errors after running the SQL, your Streamlit **secrets** are wrong.
+"""
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_supabase() -> Client:
+    url = st.secrets.get("SUPABASE_URL", "").strip()
+    key = st.secrets.get("SUPABASE_SERVICE_KEY", "").strip()  # service role key (server-side only)
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in Streamlit secrets.")
+    return create_client(url, key)
+
+
+try:
+    supabase = get_supabase()
+except Exception as e:
+    _show_db_error(e, "Supabase secrets missing / invalid")
+    st.stop()
+
+
+def supa_execute_with_retry(builder, tries: int = 5):
+    last_err = None
+    for i in range(tries):
+        try:
+            return builder.execute()
+        except (httpx.ReadError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_err = e
+            time.sleep(0.6 * (i + 1))
+    raise last_err
+
+
+def supabase_health_check_or_stop():
+    try:
+        supa_execute_with_retry(supabase.table("season_totals").select("id").limit(1))
+        supa_execute_with_retry(supabase.table("processed_games").select("id").limit(1))
+        return True
+    except Exception as e:
+        _show_db_error(e, "Supabase not ready")
+        _render_supabase_fix_block()
+        st.stop()
+
+
+supabase_health_check_or_stop()
+
+
+def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str]):
+    """
+    Returns (season_team, season_players, games_played, processed_hashes_set)
+    """
+    season_team = empty_stat_dict()
+    season_players = {p: empty_stat_dict() for p in current_roster}
+    games_played = 0
+
+    try:
+        res = (
+            supabase.table("season_totals")
+            .select("data, games_played")
+            .eq("team_code", team_code)
+            .eq("team_key", team_key)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        _show_db_error(e, "Supabase SELECT failed on season_totals")
+        _render_supabase_fix_block()
+        st.stop()
+
+    if res.data:
+        row = res.data[0]
+        payload = row.get("data") or {}
+        raw_team = payload.get("team") or {}
+        raw_players = payload.get("players") or {}
+
+        season_team = ensure_all_keys(raw_team if isinstance(raw_team, dict) else {})
+        season_players = {}
+
+        if isinstance(raw_players, dict):
+            for p, stats in raw_players.items():
+                season_players[p] = ensure_all_keys(stats) if isinstance(stats, dict) else empty_stat_dict()
+
+        for p in current_roster:
+            if p not in season_players:
+                season_players[p] = empty_stat_dict()
+
+        games_played = int(row.get("games_played") or 0)
+
+    try:
+        pres = (
+            supabase.table("processed_games")
+            .select("game_hash")
+            .eq("team_code", team_code)
+            .eq("team_key", team_key)
+            .execute()
+        )
+    except Exception as e:
+        _show_db_error(e, "Supabase SELECT failed on processed_games")
+        _render_supabase_fix_block()
+        st.stop()
+
+    processed_set = set()
+    if pres.data:
+        processed_set = {r["game_hash"] for r in pres.data if r.get("game_hash")}
+
+    return season_team, season_players, games_played, processed_set
+
+
+def db_save_season_totals(team_code: str, team_key: str, season_team: dict, season_players: dict, games_played: int):
+    payload = {"team": season_team, "players": season_players}
+    try:
+        (
+            supabase.table("season_totals")
+            .upsert(
+                {
+                    "team_code": team_code,
+                    "team_key": team_key,
+                    "data": payload,
+                    "games_played": int(games_played),
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+                on_conflict="team_code,team_key",
+            )
+            .execute()
+        )
+    except Exception as e:
+        _show_db_error(e, "Supabase UPSERT failed on season_totals")
+        _render_supabase_fix_block()
+        st.stop()
+
+
+def db_try_mark_game_processed(team_code: str, team_key: str, game_hash: str) -> bool:
+    try:
+        supabase.table("processed_games").insert(
+            {"team_code": team_code, "team_key": team_key, "game_hash": game_hash}
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def db_unmark_game_processed(team_code: str, team_key: str, game_hash: str):
+    try:
+        supa_execute_with_retry(
+            supabase.table("processed_games")
+            .delete()
+            .eq("team_code", team_code)
+            .eq("team_key", team_key)
+            .eq("game_hash", game_hash)
+        )
+    except Exception:
+        pass
+
+
+def db_reset_season(team_code: str, team_key: str):
+    try:
+        supabase.table("season_totals").delete().eq("team_code", team_code).eq("team_key", team_key).execute()
+        supabase.table("processed_games").delete().eq("team_code", team_code).eq("team_key", team_key).execute()
+    except Exception as e:
+        _show_db_error(e, "Supabase RESET failed")
+        _render_supabase_fix_block()
+        st.stop()
+
+
+# -----------------------------
+# BRANDING + BACKGROUND
+# -----------------------------
+def get_base64_image(path: str) -> str:
+    if not path or not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+PRIMARY = SETTINGS.get("primary_color", "#b91c1c")
+SECONDARY = SETTINGS.get("secondary_color", "#111111")
+
+LOGO_PATH = SETTINGS.get("logo_image", os.path.join("assets", "logo.png"))
+BG_PATH = SETTINGS.get("background_image", os.path.join("assets", "background.jpg"))
+
+if TEAM_CFG:
+    LOGO_PATH = TEAM_CFG.get("logo_path", LOGO_PATH)
+    BG_PATH = TEAM_CFG.get("background_path", BG_PATH)
+
+BG_B64 = get_base64_image(BG_PATH)
+
+
+# -----------------------------
+# FONTS (force load)
+# -----------------------------
+st.markdown(
+    """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Jersey+10&display=swap" rel="stylesheet">
+""",
+    unsafe_allow_html=True,
+)
+
+# -----------------------------
+# STYLES (adds missing .badge + .spray-card too)
+# -----------------------------
+st.markdown(
+    f"""
+<style>
+h1.app-title {{
+    font-family: 'Black Ops One', 'Jersey 10', sans-serif !important;
+    font-size: 6.0rem !important;
+    color: {PRIMARY} !important;
+    text-align: center !important;
+    letter-spacing: 0.20em !important;
+    text-transform: uppercase !important;
+    -webkit-text-stroke: 2.5px #000000;
+    text-shadow:
+        2px 2px 0 #000000,
+        -2px 2px 0 #000000,
+        2px -2px 0 #000000,
+        -2px -2px 0 #000000;
+    margin-top: -10px !important;
+    margin-bottom: 12px !important;
+}}
+
+.app-subtitle {{
+    font-size: 1.10rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+    color: #111827 !important;
+    opacity: 0.97 !important;
+    text-align: center !important;
+    margin-bottom: 18px !important;
+}}
+
+.badge {{
+    display: inline-block;
+    padding: 4px 10px;
+    margin: 3px 4px 0 0;
+    border-radius: 999px;
+    font-size: 0.80rem;
+    font-weight: 700;
+    border: 1px solid rgba(17,24,39,0.20);
+    background: rgba(255,255,255,0.65);
+    color: #111827;
+}}
+
+.spray-card {{
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(17,24,39,0.15);
+    background: rgba(255,255,255,0.75);
+}}
+
+[data-testid="stAppViewContainer"] {{
+    background:
+        linear-gradient(rgba(229,231,235,0.90), rgba(229,231,235,0.90)),
+        url("data:image/jpeg;base64,{BG_B64}") no-repeat center fixed;
+    background-size: 600px;
+    color: #111827;
+}}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+# -----------------------------
+# HEADER
+# -----------------------------
+st.markdown(f"<h1 class='app-title'>{SETTINGS.get('app_title','RP Spray Analytics')}</h1>", unsafe_allow_html=True)
+st.markdown(f"<div class='app-subtitle'>{SETTINGS.get('subtitle','')}</div>", unsafe_allow_html=True)
+st.markdown("---")
+
+
+# -----------------------------
 # SIDEBAR
 # -----------------------------
 with st.sidebar:
@@ -1006,11 +964,11 @@ with st.sidebar:
     st.markdown("### ⚾ Spray Lab")
     st.markdown(
         """
-        <span class="badge">Unlimited Teams</span>
-        <span class="badge">GameChanger</span>
-        <span class="badge">First Contact</span>
-        <span class="badge">GB / FB</span>
-        """,
+<span class="badge">Unlimited Teams</span>
+<span class="badge">GameChanger</span>
+<span class="badge">First Contact</span>
+<span class="badge">GB / FB</span>
+""",
         unsafe_allow_html=True,
     )
 
@@ -1030,7 +988,6 @@ with st.sidebar:
 st.subheader("🏟️ Team Selection")
 
 team_files = list_team_files()
-
 if not team_files:
     st.warning("No roster files found yet for THIS access code. Create one below.")
     st.stop()
@@ -1056,6 +1013,7 @@ with st.expander("➕ Add a new team roster file"):
 
 st.markdown("---")
 
+
 # -----------------------------
 # ROSTER UI (LOADS FROM TEAM FILE)
 # -----------------------------
@@ -1080,21 +1038,19 @@ current_roster = {line.strip().strip('"') for line in roster_text.split("\n") if
 st.write(f"**Hitters loaded:** {len(current_roster)}")
 
 # ✅ LOAD FROM SUPABASE ONLY (source of truth)
-season_team, season_players, games_played, processed_set = db_load_season_totals(TEAM_CODE_SAFE, team_key, current_roster)
-
-# ✅ No local season JSON files on Streamlit Cloud
-sf = "(stored in Supabase)"
-last_updated_str = "Supabase"
+season_team, season_players, games_played, processed_set = db_load_season_totals(
+    TEAM_CODE_SAFE, team_key, current_roster
+)
 
 st.markdown(
     f"""
-    <div class="spray-card">
-        <strong>Active team:</strong> {selected_team}<br>
-        <strong>Season storage:</strong> <code>{sf}</code><br>
-        <strong>Games processed:</strong> {games_played}<br>
-        <strong>Last updated:</strong> {last_updated_str}
-    </div>
-    """,
+<div class="spray-card">
+    <strong>Active team:</strong> {selected_team}<br>
+    <strong>Season storage:</strong> <code>(stored in Supabase)</code><br>
+    <strong>Games processed:</strong> {games_played}<br>
+    <strong>Last updated:</strong> Supabase
+</div>
+""",
     unsafe_allow_html=True,
 )
 
@@ -1102,12 +1058,9 @@ col_reset, _ = st.columns([1, 3])
 with col_reset:
     if st.button(f"❗ Reset SEASON totals for {selected_team}"):
         db_reset_season(TEAM_CODE_SAFE, team_key)
-
-        season_team, season_players, games_played, processed_set = db_load_season_totals(
-            TEAM_CODE_SAFE, team_key, current_roster
-        )
         st.warning("Season totals reset for this team (Supabase).")
         st.rerun()
+
 
 # -----------------------------
 # ✅ COACH-PROOF BACKUP / RESTORE (SUPABASE)
@@ -1138,10 +1091,7 @@ with st.expander("🛟 Backup / Restore (Coach-Proof) — Download + Upload Seas
         help="Choose a season_totals_backup.json file you downloaded earlier.",
     )
 
-    col_r1, col_r2 = st.columns([1, 2])
-    with col_r1:
-        do_restore = st.button("♻️ Restore Backup NOW")
-
+    do_restore = st.button("♻️ Restore Backup NOW")
     if do_restore:
         if uploaded is None:
             st.error("Upload a backup JSON first.")
@@ -1189,6 +1139,7 @@ with st.expander("🛟 Backup / Restore (Coach-Proof) — Download + Upload Seas
         except Exception as e:
             st.error(f"Restore failed: {e}")
 
+
 # -----------------------------
 # PLAY-BY-PLAY INPUT
 # -----------------------------
@@ -1199,6 +1150,7 @@ raw_text = st.text_area(
     height=260,
 )
 
+
 # -----------------------------
 # PROCESS GAME (SUPABASE DEDUPE + SUPABASE SAVE)
 # -----------------------------
@@ -1207,6 +1159,7 @@ if "processing_game" not in st.session_state:
 if "processing_started_at" not in st.session_state:
     st.session_state.processing_started_at = 0.0
 
+# failsafe unlock after 15 seconds
 if st.session_state.processing_game:
     try:
         if (time.time() - float(st.session_state.processing_started_at or 0.0)) > 15:
@@ -1215,6 +1168,7 @@ if st.session_state.processing_game:
     except Exception:
         st.session_state.processing_game = False
         st.session_state.processing_started_at = 0.0
+
 
 if st.button("📥 Process Game (ADD to Season Totals)"):
     if st.session_state.processing_game:
@@ -1225,8 +1179,6 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
     st.session_state.processing_started_at = time.time()
 
     rerun_needed = False
-
-    # ✅ 2B) Track whether we successfully "marked processed" so we can rollback if anything fails.
     marked_processed = False
     gkey = None
 
@@ -1246,13 +1198,12 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
             st.stop()
 
         processed_set.add(gkey)
-        marked_processed = True  # ✅ we inserted the row; rollback if anything below fails
+        marked_processed = True
 
         lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
         game_team = empty_stat_dict()
         game_players = {p: empty_stat_dict() for p in current_roster}
-        debug_samples = []
 
         for line in lines:
             clean_line = line.strip().strip('"')
@@ -1260,6 +1211,7 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
             clean_line = re.sub(r"\s+", " ", clean_line).strip()
             line_lower = clean_line.lower()
 
+            # running events (not BIP)
             runner, total_key, base_key = parse_running_event(clean_line, current_roster)
             if runner and total_key:
                 game_team[total_key] += 1
@@ -1293,15 +1245,9 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
                     bt_conf += 1
                     bt_reasons.append("No explicit FB phrase → inferred FB from outfield location")
 
-            total_conf_val = loc_conf + bt_conf
-            conf_label = overall_confidence_score(total_conf_val)
-            reasons = loc_reasons + bt_reasons
-
-            if len(debug_samples) < 60:
-                debug_samples.append(
-                    f"{batter} -> loc={loc}, ball={ball_type or 'None'}, conf={conf_label} | "
-                    f"{'; '.join(reasons) or 'no explicit phrase match'} | {clean_line}"
-                )
+            # (confidence labels kept for future debug; not displayed)
+            _ = overall_confidence_score(loc_conf + bt_conf)
+            _ = loc_reasons + bt_reasons
 
             game_team[loc] += 1
             game_players[batter][loc] += 1
@@ -1316,14 +1262,12 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
                 game_players[batter][combo_key] += 1
 
         add_game_to_season(season_team, season_players, game_team, game_players)
-
         db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, len(processed_set))
 
         st.success("✅ Game processed and added to season totals (Supabase).")
         rerun_needed = True
 
     except Exception as e:
-        # ✅ 2B) ROLLBACK: if we marked the game processed but anything failed, UNMARK it so you can retry.
         if marked_processed and gkey:
             try:
                 processed_set.discard(gkey)
@@ -1341,10 +1285,12 @@ if st.button("📥 Process Game (ADD to Season Totals)"):
     if rerun_needed:
         st.rerun()
 
+
 # -----------------------------
 # SEASON OUTPUTS
 # -----------------------------
 st.subheader(f"📔 Per-Player Spray – SEASON TO DATE ({selected_team})")
+
 season_rows = []
 for player in sorted(season_players.keys()):
     stats = season_players[player]
@@ -1360,7 +1306,6 @@ for player in sorted(season_players.keys()):
     season_rows.append(row)
 
 df_season = pd.DataFrame(season_rows)
-
 col_order = (["Player"] + LOCATION_KEYS + ["GB", "FB"] + COMBO_KEYS + RUN_KEYS)
 col_order = [c for c in col_order if c in df_season.columns]
 df_season = df_season[col_order]
@@ -1394,12 +1339,11 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         max_len = len(str(col_name))
         sample = df_season[col_name].astype(str).head(60).tolist()
         for v in sample:
-            if len(v) > max_len:
-                max_len = len(v)
+            max_len = max(max_len, len(v))
         ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 22)
 
     start_row = 2
-    start_col = 2
+    start_col = 2  # numeric starts after Player
     end_row = ws.max_row
     end_col = ws.max_column
 
@@ -1408,30 +1352,33 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         end_cell = f"{get_column_letter(end_col)}{end_row}"
         data_range = f"{start_cell}:{end_cell}"
 
+        # gray out zeros (relative formula so each cell checks itself)
         zero_fill = OPFill("solid", fgColor="EFEFEF")
         zero_rule = FormulaRule(
             formula=[f"{get_column_letter(start_col)}{start_row}=0"],
             fill=zero_fill,
-            stopIfTrue=True
+            stopIfTrue=True,
         )
         ws.conditional_formatting.add(data_range, zero_rule)
 
+        # heatmap
         heat_rule = ColorScaleRule(
             start_type="num", start_value=1, start_color="FFFFFF",
             mid_type="percentile", mid_value=50, mid_color="FFF2CC",
-            end_type="max", end_color="F8CBAD"
+            end_type="max", end_color="F8CBAD",
         )
         ws.conditional_formatting.add(data_range, heat_rule)
 
+    # highlight UNKNOWN > 0
     if "UNKNOWN" in df_season.columns:
         unk_idx = list(df_season.columns).index("UNKNOWN") + 1
         unk_col = get_column_letter(unk_idx)
         unk_range = f"{unk_col}{start_row}:{unk_col}{end_row}"
-
         unk_fill = OPFill("solid", fgColor="FFC7CE")
         unk_rule = CellIsRule(operator="greaterThan", formula=["0"], fill=unk_fill)
         ws.conditional_formatting.add(unk_range, unk_rule)
 
+    # center numbers
     num_align = Alignment(horizontal="center", vertical="center")
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
         for cell in row:
@@ -1441,7 +1388,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 excel_bytes = out.getvalue()
 
 col_dl1, col_dl2 = st.columns(2)
-
 with col_dl1:
     st.download_button(
         label="📊 Download Season Report (Excel)",
@@ -1460,8 +1406,10 @@ with col_dl2:
 
 st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
 selectable_players = sorted(
-    [p for p in season_players.keys()
-     if any(season_players[p].get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS))]
+    [
+        p for p in season_players.keys()
+        if any(season_players[p].get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS))
+    ]
 )
 
 if not selectable_players:
@@ -1473,9 +1421,11 @@ else:
     indiv_rows = [{"Type": loc, "Count": stats.get(loc, 0)} for loc in LOCATION_KEYS]
     indiv_rows.append({"Type": "GB (total)", "Count": stats.get("GB", 0)})
     indiv_rows.append({"Type": "FB (total)", "Count": stats.get("FB", 0)})
+
     for ck in COMBO_KEYS:
         indiv_rows.append({"Type": ck, "Count": stats.get(ck, 0)})
 
+    # running events
     indiv_rows.append({"Type": "SB", "Count": stats.get("SB", 0)})
     indiv_rows.append({"Type": "CS", "Count": stats.get("CS", 0)})
     indiv_rows.append({"Type": "DI", "Count": stats.get("DI", 0)})
