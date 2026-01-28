@@ -1462,6 +1462,7 @@ roster_text = st.text_area(
     value=default_roster_text,
     height=220,
 )
+
 col_a, _ = st.columns([1, 3])
 with col_a:
     if st.button("💾 Save Roster"):
@@ -1496,17 +1497,9 @@ with col_a:
         st.success("Roster saved + removed players archived (reports will match roster).")
         st.rerun()
 
-
-
-        # Save back with updated archived list
-    db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players)
-
-        st.success("Roster saved + removed players archived (reports will match roster).")
-        st.rerun()
-
-
 current_roster = {line.strip().strip('"') for line in roster_text.split("\n") if line.strip()}
 st.write(f"**Hitters loaded:** {len(current_roster)}")
+
 
 # ✅ LOAD FROM SUPABASE ONLY (source of truth) — includes archived_players
 season_team, season_players, games_played, processed_set, archived_players = db_load_season_totals(
@@ -2026,6 +2019,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
