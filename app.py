@@ -1462,7 +1462,6 @@ roster_text = st.text_area(
     value=default_roster_text,
     height=220,
 )
-
 col_a, _ = st.columns([1, 3])
 with col_a:
     if st.button("💾 Save Roster"):
@@ -1472,12 +1471,12 @@ with col_a:
         # Save roster text
         db_upsert_team(TEAM_CODE_SAFE, team_key, selected_team, roster_text)
 
-        # Reload season from DB (source of truth) — includes archived_players
+        # Reload season from DB (source of truth) – includes archived_players
         season_team, season_players, games_played, processed_set, archived_players = db_load_season_totals(
             TEAM_CODE_SAFE, team_key, new_roster
         )
 
-        # Archive anyone removed from roster (but KEEP their stats in DB)
+        # Archive anyone removed from roster (but KEEP their stats)
         removed = set(season_players.keys()) - set(new_roster)
         archived_players = set(archived_players or set())
         archived_players.update(removed)
@@ -1489,22 +1488,19 @@ with col_a:
         for p in new_roster:
             season_players.setdefault(p, empty_stat_dict())
 
-        # Save back with updated archived list (this is the whole point)
+        # Save back with updated archived list
         db_save_season_totals(
-            TEAM_CODE_SAFE,
-            team_key,
-            season_team,
-            season_players,
-            games_played,
-            archived_players
-    )
+            TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players
+        )
 
-st.success("Roster saved + removed players archived (reports will match roster).")
-st.rerun()
+        st.success("Roster saved + removed players archived (reports will match roster).")
+        st.rerun()
+
+
 
 
         # Save back with updated archived list
-        db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players)
+    db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players)
 
         st.success("Roster saved + removed players archived (reports will match roster).")
         st.rerun()
@@ -2031,6 +2027,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
