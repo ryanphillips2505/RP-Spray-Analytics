@@ -924,7 +924,85 @@ def supabase_health_check_or_stop():
 supabase_health_check_or_stop()
 
 
-def db_save_season_totals(team_code: str, team_key: str, season_team: dict, season_players: dict, games_played: int, archived_players: set[str] | list[str] | None = None):
+def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str]):
+    """
+    Returns (season_team, season_players, games_played, processed_hashes_set, archived_players_set)
+    archived_players are players who exist in DB totals but are not on the current roster (or were removed).
+    """
+    season_team = empty_stat_dict()
+    season_players = {p: empty_stat_dict() for p in current_roster}
+    games_played = 0
+    archived_players = set()
+
+    try:
+        res = (
+            supabase.table("season_totals")
+            .select("data, games_played")
+            .eq("team_code", team_code)
+            .eq("team_key", team_key)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        _show_db_error(e, "Supabase SELECT failed on season_totals")
+        _render_supabase_fix_block()
+        st.stop()
+
+    if res.data:
+        row = res.data[0]
+        payload = row.get("data") or {}
+
+        raw_team = payload.get("team") or {}
+        raw_players = payload.get("players") or {}
+        raw_meta = payload.get("meta") or {}
+
+        season_team = ensure_all_keys(raw_team if isinstance(raw_team, dict) else {})
+        season_players = {}
+
+        if isinstance(raw_players, dict):
+            for p, stats in raw_players.items():
+                season_players[p] = ensure_all_keys(stats) if isinstance(stats, dict) else empty_stat_dict()
+
+        # Ensure current roster always exists in dict (so new guys show up immediately)
+        for p in current_roster:
+            if p not in season_players:
+                season_players[p] = empty_stat_dict()
+
+        games_played = int(row.get("games_played") or 0)
+
+        # Archived list stored in meta (optional)
+        ap = raw_meta.get("archived_players", []) if isinstance(raw_meta, dict) else []
+        if isinstance(ap, list):
+            archived_players = {str(x).strip().strip('"') for x in ap if str(x).strip()}
+
+    try:
+        pres = (
+            supabase.table("processed_games")
+            .select("game_hash")
+            .eq("team_code", team_code)
+            .eq("team_key", team_key)
+            .execute()
+        )
+    except Exception as e:
+        _show_db_error(e, "Supabase SELECT failed on processed_games")
+        _render_supabase_fix_block()
+        st.stop()
+
+    processed_set = set()
+    if pres.data:
+        processed_set = {r["game_hash"] for r in pres.data if r.get("game_hash")}
+
+    return season_team, season_players, games_played, processed_set, archived_players
+
+
+def db_save_season_totals(
+    team_code: str,
+    team_key: str,
+    season_team: dict,
+    season_players: dict,
+    games_played: int,
+    archived_players: set[str] | list[str] | None = None,
+):
     archived_list = []
     if archived_players:
         archived_list = sorted({str(x).strip().strip('"') for x in archived_players if str(x).strip()})
@@ -955,69 +1033,7 @@ def db_save_season_totals(team_code: str, team_key: str, season_team: dict, seas
         _render_supabase_fix_block()
         st.stop()
 
-
-    if res.data:
-        row = res.data[0]
-        payload = row.get("data") or {}
-        raw_team = payload.get("team") or {}
-        raw_players = payload.get("players") or {}
-
-        season_team = ensure_all_keys(raw_team if isinstance(raw_team, dict) else {})
-        season_players = {}
-
-        if isinstance(raw_players, dict):
-            for p, stats in raw_players.items():
-                season_players[p] = ensure_all_keys(stats) if isinstance(stats, dict) else empty_stat_dict()
-
-        for p in current_roster:
-            if p not in season_players:
-                season_players[p] = empty_stat_dict()
-
-        games_played = int(row.get("games_played") or 0)
-
-    try:
-        pres = (
-            supabase.table("processed_games")
-            .select("game_hash")
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
-            .execute()
-        )
-    except Exception as e:
-        _show_db_error(e, "Supabase SELECT failed on processed_games")
-        _render_supabase_fix_block()
-        st.stop()
-
-    processed_set = set()
-    if pres.data:
-        processed_set = {r["game_hash"] for r in pres.data if r.get("game_hash")}
-
-    return season_team, season_players, games_played, processed_set
-
-
-def db_save_season_totals(team_code: str, team_key: str, season_team: dict, season_players: dict, games_played: int):
-    payload = {"team": season_team, "players": season_players}
-    try:
-        (
-            supabase.table("season_totals")
-            .upsert(
-                {
-                    "team_code": team_code,
-                    "team_key": team_key,
-                    "data": payload,
-                    "games_played": int(games_played),
-                    "updated_at": datetime.utcnow().isoformat(),
-                },
-                on_conflict="team_code,team_key",
-            )
-            .execute()
-        )
-    except Exception as e:
-        _show_db_error(e, "Supabase UPSERT failed on season_totals")
-        _render_supabase_fix_block()
-        st.stop()
-
-
+        
 def db_try_mark_game_processed(team_code: str, team_key: str, game_hash: str) -> bool:
     try:
         supabase.table("processed_games").insert(
@@ -1472,6 +1488,20 @@ with col_a:
         # Ensure new roster players exist in season_players
         for p in new_roster:
             season_players.setdefault(p, empty_stat_dict())
+
+        # Save back with updated archived list (this is the whole point)
+        db_save_season_totals(
+            TEAM_CODE_SAFE,
+            team_key,
+            season_team,
+            season_players,
+            games_played,
+            archived_players
+    )
+
+st.success("Roster saved + removed players archived (reports will match roster).")
+st.rerun()
+
 
         # Save back with updated archived list
         db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players)
@@ -2001,6 +2031,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
