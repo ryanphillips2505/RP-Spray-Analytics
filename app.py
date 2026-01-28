@@ -1483,7 +1483,7 @@ with col_a:
 current_roster = {line.strip().strip('"') for line in roster_text.split("\n") if line.strip()}
 st.write(f"**Hitters loaded:** {len(current_roster)}")
 
-season_team, season_players, games_played, processed_set, archived_players = db_load_season_totals(
+season_team, season_players, games_played, processed_set = db_load_season_totals(
     TEAM_CODE_SAFE, team_key, current_roster
 )
 
@@ -1987,6 +1987,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
