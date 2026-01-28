@@ -303,12 +303,14 @@ BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
-# Running event tracking (NOT balls in play) — PICKOFFS REMOVED
+# Running event tracking (NOT balls in play)
 RUN_KEYS = [
-    "SB", "SB-2B", "SB-3B", "SB-H",
-    "CS", "CS-2B", "CS-3B", "CS-H",
-    "DI", "DI-2B", "DI-3B", "DI-H",
+    # Stolen Bases
+    "SB", "SB-2B", "SB-3B",
+    # Caught Stealing
+    "CS", "CS-2B", "CS-3B",
 ]
+
 
 
 # -----------------------------
@@ -1936,6 +1938,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
