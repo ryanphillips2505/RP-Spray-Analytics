@@ -1498,8 +1498,6 @@ with col_a:
 
 
 
-
-
         # Save back with updated archived list
     db_save_season_totals(TEAM_CODE_SAFE, team_key, season_team, season_players, games_played, archived_players)
 
@@ -2028,6 +2026,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
