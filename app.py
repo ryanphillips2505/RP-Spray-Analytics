@@ -32,12 +32,8 @@ def hash_access_code(code: str) -> str:
     raw = (code.strip() + pepper).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 def admin_set_access_code(team_lookup: str, new_plain_code: str) -> bool:
-    """
-    Updates team_access.code_hash for the given team (by team_code OR team_slug).
-    Returns True if update succeeds.
-    """
     team_lookup = (team_lookup or "").strip().upper()
-    new_plain_code = (new_plain_code or "").strip()
+    new_plain_code = (new_plain_code or "").strip().upper()  # <-- FIXED
 
     if not team_lookup or not new_plain_code:
         return False
@@ -1943,6 +1939,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
