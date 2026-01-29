@@ -314,7 +314,7 @@ RUN_KEYS = [
 # -----------------------------
 # PITCHING (YUKON) — IP / K / BB / STRIKE%
 # -----------------------------
-HALF_INNING_RE = re.compile(r"^(Top|Bottom)\s+\d+(?:st|nd|rd|th)\s+-\s+(.+?)\s*$", re.IGNORECASE)
+HALF_INNING_RE = re.compile(r"^(Top|Bottom)\s+\d+(?:st|nd|rd|th)?\s*-\s*(.+?)\s*$", re.IGNORECASE)
 OUTS_MARKER_RE = re.compile(r"^\s*([123])\s+Outs?\s*$", re.IGNORECASE)
 
 PBP_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+pitching\b")
@@ -1917,6 +1917,8 @@ if process_clicked:
                 current_batting_team = maybe_batting
                 last_outs_in_half = 0
                 pending_outs = 0
+                # New half-inning: don't carry pitcher forward implicitly
+                current_pitcher = "UNKNOWN_P"
 
             # Defense/offense detection: we only credit Yukon pitching when the OTHER team is batting
             is_team_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
