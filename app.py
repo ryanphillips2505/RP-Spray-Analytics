@@ -1999,12 +1999,13 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 # -----------------------------
 # Excel: add a merged "Coach Notes" box 5 rows below the table (single printable page)
 # -----------------------------
+notes_text = (notes_text or "").strip()
 if notes_text:
     from openpyxl.styles import Border, Side
 
     last_data_row = 1 + len(df_export)  # header is row 1
-    top_row = last_data_row + 5
-    box_height = 10  # rows tall
+    top_row = last_data_row + 5         # 5 rows after last player row
+    box_height = 10                     # rows tall (adjust if you want)
     left_col = 1
     right_col = ws.max_column
 
@@ -2012,22 +2013,18 @@ if notes_text:
     end_cell = f"{get_column_letter(right_col)}{top_row + box_height - 1}"
     box_range = f"{start_cell}:{end_cell}"
 
-    # Merge and write notes
+    # Merge and write notes (single cell)
     ws.merge_cells(box_range)
     cell = ws[start_cell]
-    cell.value = f"COACH NOTES:\n\n{notes_text}"
+    cell.value = f"COACH NOTES:\\n\\n{notes_text}"
     cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-    # Make the box a little taller
+    # Make the box rows taller
     for r in range(top_row, top_row + box_height):
         ws.row_dimensions[r].height = 20
 
-    # Thick border around the whole box
+    # Thick border around the whole box (perimeter only)
     thick = Side(style="thick")
-    thin = Side(style="thin")
-    border_thick = Border(left=thick, right=thick, top=thick, bottom=thick)
-
-    # Apply borders to perimeter cells
     for r in range(top_row, top_row + box_height):
         for c in range(left_col, right_col + 1):
             addr = f"{get_column_letter(c)}{r}"
@@ -2116,9 +2113,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
-
 
 
 
