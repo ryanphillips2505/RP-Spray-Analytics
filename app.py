@@ -2015,7 +2015,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
         ws.merge_cells(box_range)
         cell = ws[start_cell]
-        cell.value = f"COACH NOTES:
+        cell.value = f"COACH NOTES:\n\n{notes_text}"
 
 {notes_box_text}"
         cell.alignment = Alignment(wrap_text=True, vertical="top")
@@ -2115,6 +2115,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
