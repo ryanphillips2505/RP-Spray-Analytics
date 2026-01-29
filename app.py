@@ -2338,14 +2338,20 @@ with col_dl2:
 
 st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
 
-# ✅ Individual dropdown matches roster by default; archived optional
-if show_archived:
+# ✅ Individual archived toggle (separate from season table)
+indiv_show_archived = st.checkbox(
+    "Show archived players (not on current roster) — Individual",
+    value=False,
+    key=f"indiv_show_archived__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}",
+)
+
+# ✅ Candidate list for individual picker (include 0-stat players)
+if indiv_show_archived:
     indiv_candidates = sorted(set(active_players + archived_list))
 else:
-    indiv_candidates = active_players
+    indiv_candidates = list(active_players)
 
-# ✅ Allow zero-stat players to appear (roster + archived behavior stays consistent)
-selectable_players = [p for p in indiv_candidates if p in season_players]
+selectable_players = list(indiv_candidates)
 
 # -----------------------------
 # INDIV STAT LIST + STAT EDIT
@@ -2464,7 +2470,7 @@ else:
     with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
         used = set()
         for p in selectable_players:
-            st_p = season_players[p]
+            st_p = season_players.get(p, {})
             rows_p = []
             for t in indiv_types_selected:
                 if t == "GB (total)":
@@ -2485,15 +2491,87 @@ else:
                 k += 1
             used.add(sn)
 
-            df_p.to_excel(writer, index=False, sheet_name=sn)
+            df_p.to_excel(writer, index=False, sheet_name=sn, startrow=12)
             ws = writer.book[sn]
-            ws.freeze_panes = "A2"
+            ws.freeze_panes = "A14"
+
+            # --- MLB-style field summary (GB/FB by position) ---
+            ws.sheet_view.showGridLines = False
+
+            from openpyxl.styles import Border, Side, PatternFill
+            thin = Side(style="thin", color="9CA3AF")
+            box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            title_font = Font(bold=True, size=16)
+            small_font = Font(bold=True, size=11)
+
+            # Title
+            ws.merge_cells("A1:I1")
+            ws["A1"] = f"Individual Spray Summary — {p}"
+            ws["A1"].font = title_font
+            ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+            ws["A2"] = "GB / FB by position"
+            ws["A2"].font = small_font
+            ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+            # Set column widths for the field area
+            for col_letter in list("ABCDEFGHI"):
+                if col_letter not in ("A", "B"):
+                    ws.column_dimensions[col_letter].width = 11
+            ws.column_dimensions["A"].width = 18
+            ws.column_dimensions["B"].width = 10
+
+            field_fill = PatternFill("solid", fgColor="EAF6EA")  # light turf
+            dirt_fill = PatternFill("solid", fgColor="F3E7D3")   # light dirt
+
+            def box(r1, c1, r2, c2, fill, text_):
+                ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+                cell = ws.cell(row=r1, column=c1)
+                cell.value = text_
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.fill = fill
+                for rr in range(r1, r2 + 1):
+                    for cc in range(c1, c2 + 1):
+                        ws.cell(row=rr, column=cc).border = box_border
+                        ws.cell(row=rr, column=cc).fill = fill
+
+            def gbfb(pos_key):
+                gb = int(st_p.get(f"GB-{pos_key}", 0) or 0)
+                fb = int(st_p.get(f"FB-{pos_key}", 0) or 0)
+                return gb, fb
+
+            # Outfield
+            gb, fb = gbfb("LF")
+            box(3, 2, 4, 4, field_fill, f"LF\nGB {gb}  |  FB {fb}")
+            gb, fb = gbfb("CF")
+            box(2, 5, 3, 6, field_fill, f"CF\nGB {gb}  |  FB {fb}")
+            gb, fb = gbfb("RF")
+            box(3, 7, 4, 9, field_fill, f"RF\nGB {gb}  |  FB {fb}")
+
+            # Infield
+            gb, fb = gbfb("3B")
+            box(6, 2, 7, 3, dirt_fill, f"3B\nGB {gb}  |  FB {fb}")
+            gb, fb = gbfb("SS")
+            box(5, 4, 6, 5, dirt_fill, f"SS\nGB {gb}  |  FB {fb}")
+            gb, fb = gbfb("2B")
+            box(5, 6, 6, 7, dirt_fill, f"2B\nGB {gb}  |  FB {fb}")
+            gb, fb = gbfb("1B")
+            box(6, 8, 7, 9, dirt_fill, f"1B\nGB {gb}  |  FB {fb}")
+
+            gb, fb = gbfb("P")
+            box(7, 5, 8, 6, dirt_fill, f"P\nGB {gb}  |  FB {fb}")
+
+            ws["A12"] = "Selected Stat Totals"
+            ws["A12"].font = small_font
+            ws["A12"].alignment = Alignment(horizontal="left", vertical="center")
+
 
             from openpyxl.styles import Font, Alignment, PatternFill as OPFill
             header_font = Font(bold=True)
             header_align = Alignment(horizontal="center", vertical="center")
             header_fill = OPFill("solid", fgColor="EDEDED")
-            for cell in ws[1]:
+            for cell in ws[13]:
                 cell.font = header_font
                 cell.alignment = header_align
                 cell.fill = header_fill
@@ -2506,7 +2584,7 @@ else:
     # CSV bytes (long format)
     long_rows = []
     for p in selectable_players:
-        st_p = season_players[p]
+        st_p = season_players.get(p, {})
         for t in indiv_types_selected:
             if t == "GB (total)":
                 cnt = st_p.get("GB", 0)
