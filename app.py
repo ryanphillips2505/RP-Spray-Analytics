@@ -2232,7 +2232,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             stopIfTrue=True,
         )
         if not no_season_data:
-        ws.conditional_formatting.add(data_range, zero_rule)
+                ws.conditional_formatting.add(data_range, zero_rule)
 
         # heatmap
         heat_rule = ColorScaleRule(
