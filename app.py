@@ -429,22 +429,32 @@ def parse_outs_marker(line: str) -> Optional[int]:
     m = OUTS_MARKER_RE.search(s)
     return int(m.group(1)) if m else None
 
-def parse_pitcher_from_line(line: str) -> Optional[str]:
+def parse_pitcher_change_from_line(line: str) -> Optional[str]:
+    """Detect explicit pitcher CHANGE lines (substitutions)."""
     s = (line or "").strip().strip('"')
 
-    # Highest-signal patterns first (GC substitutions)
-    for rx in (PBP_IN_AT_PITCHER_RE, PBP_IN_FOR_X_PITCHING_RE):
+    # GC substitutions / lineup changes
+    for rx in (PBP_IN_AT_PITCHER_RE, PBP_IN_FOR_X_PITCHING_RE, PBP_IN_FOR_PITCHER_RE):
         m = rx.search(s)
         if m:
             return m.group(1).strip()
-
-    # Standard "X pitching" patterns
-    for rx in (PBP_NOW_PITCHING_RE, PBP_PITCHER_RE, PBP_IN_FOR_PITCHER_RE):
-        m = rx.search(s)
-        if m:
-            return m.group(1).strip()
-
     return None
+
+
+def parse_pitcher_mention_from_line(line: str) -> Optional[str]:
+    """Detect pitcher identity mentions (not necessarily a change), e.g. 'X pitching'."""
+    s = (line or "").strip().strip('"')
+
+    for rx in (PBP_NOW_PITCHING_RE, PBP_PITCHER_RE):
+        m = rx.search(s)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def parse_pitcher_from_line(line: str) -> Optional[str]:
+    """Backward-compatible helper: returns pitcher from either change or mention."""
+    return parse_pitcher_change_from_line(line) or parse_pitcher_mention_from_line(line)
 
 def count_pitch_tokens(line: str) -> Tuple[int, int]:
     """Returns (pitches, strikes) from visible pitch tokens in GC pitch strings."""
@@ -1993,9 +2003,9 @@ if process_clicked:
 
         # keep legacy variable for downstream code
         team_pbp_name = team_name_exact
-        pending_outs = 0
-        pending_pitches = 0
-        pending_strikes = 0
+        pending_unknown_outs = 0
+        pending_unknown_pitches = 0
+        pending_unknown_strikes = 0
 
         for line in lines:
             clean_line = line.strip().strip('"')
@@ -2008,10 +2018,6 @@ if process_clicked:
             if maybe_batting:
                 current_batting_team = maybe_batting
                 last_outs_in_half = 0
-                pending_outs = 0
-                pending_pitches = 0
-                pending_strikes = 0
-
                 # New half-inning:
                 # - If we are on DEFENSE and we already know our pitcher from a prior inning,
                 #   keep him until a pitcher-change is detected (GC often doesn't repeat the name).
@@ -2037,31 +2043,52 @@ if process_clicked:
                 is_team_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name, exact=exact_match_mode))
 
             # Only update *our* current pitcher while on defense (prevents opponent pitcher bleed)
-            maybe_p = parse_pitcher_from_line(clean_line)
-            \1
-                last_def_pitcher = current_pitcher
+            # Only update *our* current pitcher while on defense (prevents opponent pitcher bleed)
+            if is_team_defense:
+                p_change = parse_pitcher_change_from_line(clean_line)
+                p_mention = parse_pitcher_mention_from_line(clean_line)
 
-                # If we previously saw outs before GC stated the pitcher, assign them now
-                # If we previously saw outs/pitches before GC stated the pitcher, assign them now
-                if (current_pitcher and current_pitcher != "UNKNOWN_P") and (pending_outs > 0 or pending_pitches > 0):
-                    game_pitching.setdefault(current_pitcher, empty_pitching_stat())
-                    if pending_outs > 0:
-                        game_pitching[current_pitcher]["OUTS"] += int(pending_outs)
-                        pending_outs = 0
-                    if pending_pitches > 0:
-                        game_pitching[current_pitcher]["PITCHES"] += int(pending_pitches)
-                        game_pitching[current_pitcher]["STRIKES"] += int(pending_strikes)
-                        pending_pitches = 0
-                        pending_strikes = 0
+                # Explicit pitcher change (sub)
+                if p_change:
+                    # If we still haven't identified the starter, flush pending unknown-starter stats to UNKNOWN_P.
+                    if (current_pitcher == "UNKNOWN_P") and (last_def_pitcher is None) and (
+                        pending_unknown_outs > 0 or pending_unknown_pitches > 0
+                    ):
+                        game_pitching.setdefault("UNKNOWN_P", empty_pitching_stat())
+                        game_pitching["UNKNOWN_P"]["OUTS"] += int(pending_unknown_outs)
+                        game_pitching["UNKNOWN_P"]["PITCHES"] += int(pending_unknown_pitches)
+                        game_pitching["UNKNOWN_P"]["STRIKES"] += int(pending_unknown_strikes)
+                        pending_unknown_outs = 0
+                        pending_unknown_pitches = 0
+                        pending_unknown_strikes = 0
 
-            # Outs (IP accuracy) — derive from play results (like BIP), not the scoreboard "2 Outs" line.
+                    current_pitcher = p_change
+                    last_def_pitcher = current_pitcher
+
+                # Pitcher mention (e.g., 'B Trogdon pitching')
+                elif p_mention:
+                    # First time we learn the starter: backfill all prior unknown-starter stats (can span innings).
+                    if (current_pitcher == "UNKNOWN_P") and (last_def_pitcher is None) and (
+                        pending_unknown_outs > 0 or pending_unknown_pitches > 0
+                    ):
+                        game_pitching.setdefault(p_mention, empty_pitching_stat())
+                        game_pitching[p_mention]["OUTS"] += int(pending_unknown_outs)
+                        game_pitching[p_mention]["PITCHES"] += int(pending_unknown_pitches)
+                        game_pitching[p_mention]["STRIKES"] += int(pending_unknown_strikes)
+                        pending_unknown_outs = 0
+                        pending_unknown_pitches = 0
+                        pending_unknown_strikes = 0
+
+                    current_pitcher = p_mention
+                    last_def_pitcher = current_pitcher
+# Outs (IP accuracy) — derive from play results (like BIP), not the scoreboard "2 Outs" line.
             outs_add = outs_from_result_header(clean_line)
             if outs_add == 0:
                 outs_add = outs_from_event_detail(clean_line)
 
             if is_team_defense and outs_add > 0:
                 if (not current_pitcher) or (current_pitcher == "UNKNOWN_P"):
-                    pending_outs += int(outs_add)
+                    pending_unknown_outs += int(outs_add)
                 else:
                     pname = current_pitcher
                     game_pitching.setdefault(pname, empty_pitching_stat())
@@ -2071,19 +2098,6 @@ if process_clicked:
             outs_now = parse_outs_marker(clean_line)
             if outs_now == 3:
                 last_outs_in_half = 3
-
-            # If the half-inning ended (3 outs) and we still never saw a pitcher line,
-            # bucket any held outs/pitches to UNKNOWN_P for that half (so IP stays correct).
-            if is_team_defense and outs_now == 3 and (pending_outs > 0 or pending_pitches > 0) and (current_pitcher == "UNKNOWN_P"):
-                game_pitching.setdefault("UNKNOWN_P", empty_pitching_stat())
-                if pending_outs > 0:
-                    game_pitching["UNKNOWN_P"]["OUTS"] += int(pending_outs)
-                    pending_outs = 0
-                if pending_pitches > 0:
-                    game_pitching["UNKNOWN_P"]["PITCHES"] += int(pending_pitches)
-                    game_pitching["UNKNOWN_P"]["STRIKES"] += int(pending_strikes)
-                    pending_pitches = 0
-                    pending_strikes = 0
             # K / BB from event detail lines (avoid header double-count)
             if is_team_defense:
                 pname = current_pitcher or "UNKNOWN_P"
@@ -2103,8 +2117,8 @@ if process_clicked:
                 if p_ct > 0:
                     # If pitcher not known yet in this defensive segment, hold pitches and assign once pitcher appears.
                     if (not pname) or (pname == "UNKNOWN_P"):
-                        pending_pitches += int(p_ct)
-                        pending_strikes += int(s_ct)
+                        pending_unknown_pitches += int(p_ct)
+                        pending_unknown_strikes += int(s_ct)
                     else:
                         game_pitching.setdefault(pname, empty_pitching_stat())
                         game_pitching[pname]["PITCHES"] += int(p_ct)
@@ -2114,7 +2128,7 @@ if process_clicked:
                 # HBP: add +1 pitch only if the line doesn't already include visible pitch tokens
                 if is_hbp_detail(clean_line) and p_ct == 0:
                     if (not pname) or (pname == "UNKNOWN_P"):
-                        pending_pitches += 1
+                        pending_unknown_pitches += 1
                     else:
                         game_pitching.setdefault(pname, empty_pitching_stat())
                         game_pitching[pname]["PITCHES"] += 1
@@ -2168,6 +2182,17 @@ if process_clicked:
                 combo_key = f"{ball_type}-{loc}"
                 game_team[combo_key] += 1
                 game_players[batter][combo_key] += 1
+
+
+        # If GC never named the starting pitcher, flush any held starter stats to UNKNOWN_P (game-level).
+        if pending_unknown_outs > 0 or pending_unknown_pitches > 0:
+            game_pitching.setdefault("UNKNOWN_P", empty_pitching_stat())
+            game_pitching["UNKNOWN_P"]["OUTS"] += int(pending_unknown_outs)
+            game_pitching["UNKNOWN_P"]["PITCHES"] += int(pending_unknown_pitches)
+            game_pitching["UNKNOWN_P"]["STRIKES"] += int(pending_unknown_strikes)
+            pending_unknown_outs = 0
+            pending_unknown_pitches = 0
+            pending_unknown_strikes = 0
 
         add_game_to_season(season_team, season_players, game_team, game_players)
 
@@ -2469,4 +2494,88 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
