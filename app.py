@@ -1971,7 +1971,7 @@ if "Player" in all_cols and "Player" not in default_cols:
 
 
 # Render Stat Edit in the same row as the archived checkbox (top-right)
-with stat_edit_slot:
+with stat_edit_slot.container():
     st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
     if hasattr(st, "popover"):
         with st.popover("Stat Edit"):
