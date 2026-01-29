@@ -310,8 +310,6 @@ RUN_KEYS = [
     "SB", "SB-2B", "SB-3B", "SB-H",
     # Caught Stealing
     "CS", "CS-2B", "CS-3B", "CS-H",
-    # Defensive Indifference
-    "DI", "DI-2B", "DI-3B", "DI-H",
 ]
 # -----------------------------
 # PITCHING (YUKON) — IP / K / BB / STRIKE%
@@ -586,7 +584,7 @@ RIGHT_SIDE_PATTERNS = [
 ]
 
 # -----------------------------
-# RUNNING EVENTS (SB / CS / DI) — PICKOFFS REMOVED + FIXED
+# RUNNING EVENTS (SB / CS) — PICKOFFS REMOVED + FIXED
 # -----------------------------
 SB_ACTION_REGEX = re.compile(
     r"""
@@ -609,29 +607,6 @@ CS_ACTION_REGEX = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-DI_REGEX_1 = re.compile(
-    r"""
-    \bdefensive\s+indifference\b
-    .*?
-    \b(?:to|advances?\s+to|takes)\b
-    (?:\s+base)?
-    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
-
-DI_REGEX_2 = re.compile(
-    r"""
-    \b(?:to|advances?\s+to|takes)\b
-    (?:\s+base)?
-    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
-    .*?
-    \bdefensive\s+indifference\b
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
-
-DI_REGEX_BARE = re.compile(r"\bdefensive\s+indifference\b", re.IGNORECASE)
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
 
@@ -770,16 +745,6 @@ def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str
         runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
         return runner, "CS", base_key
 
-    m = DI_REGEX_1.search(clean_line) or DI_REGEX_2.search(clean_line)
-    if m:
-        base_key = normalize_base_bucket("DI", m.group(1) if (m.lastindex or 0) >= 1 else None)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "DI", base_key
-
-    if DI_REGEX_BARE.search(clean_line):
-        runner = extract_runner_name_fallback(clean_line, roster)
-        return runner, "DI", "DI"
-
     return None, None, None
 
 
@@ -796,7 +761,6 @@ def is_ball_in_play(line_lower: str) -> bool:
         "reaches on catcher interference", "catcher's interference",
         "caught stealing", "out stealing",
         "steals", "stole", "stealing",
-        "defensive indifference",
         "picked off", "pickoff",
     ]):
         return False
@@ -1005,11 +969,9 @@ create index if not exists processed_games_team_idx
 
 
 def _show_db_error(e: Exception, label: str):
-    st.error(f"{label}")
-    # Always show useful error details (message + traceback)
+    st.error(str(label))
     try:
-        st.code(f"type: {type(e)}
-repr: {e!r}", language="text")
+        st.code(f"{type(e).__name__}: {e!r}", language="text")
         st.code(traceback.format_exc(), language="text")
     except Exception:
         st.write(str(e))
@@ -2369,9 +2331,8 @@ else:
     # running events
     indiv_rows.append({"Type": "SB", "Count": stats.get("SB", 0)})
     indiv_rows.append({"Type": "CS", "Count": stats.get("CS", 0)})
-    indiv_rows.append({"Type": "DI", "Count": stats.get("DI", 0)})
     for rk in RUN_KEYS:
-        if rk not in ["SB", "CS", "DI"]:
+        if rk not in ["SB", "CS"]:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
@@ -2399,3 +2360,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
