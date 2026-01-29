@@ -1297,6 +1297,16 @@ h1.app-title {{
     font-weight: 800 !important;
 }}
 </style>
+
+<style>
+/* Pull the Stat Edit control up to visually align with the section header */
+.stat-edit-wrap {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -22px !important;
+    margin-bottom: 6px !important;
+}
+</style>
 """,
     unsafe_allow_html=True,
 )
