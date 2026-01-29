@@ -1968,16 +1968,18 @@ if show_archived:
 else:
     indiv_candidates = active_players
 
-selectable_players = [
-    p for p in indiv_candidates
-    if p in season_players and any(season_players[p].get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS))
-]
+# ✅ FIX: allow players with 0 stats to still appear (so re-added guys show back up)
+selectable_players = [p for p in indiv_candidates if p in season_players]
 
 if not selectable_players:
-    st.info("No hitters have recorded balls in play yet.")
+    st.info("No hitters found for this roster yet.")
 else:
     selected_player = st.selectbox("Choose a hitter:", selectable_players)
     stats = season_players[selected_player]
+
+    # If they have all zeros, still show it (coach can verify they exist)
+    if not any(stats.get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS)):
+        st.info("This player is on the roster but has no recorded events yet (all zeros).")
 
     indiv_rows = [{"Type": loc, "Count": stats.get(loc, 0)} for loc in LOCATION_KEYS]
     indiv_rows.append({"Type": "GB (total)", "Count": stats.get("GB", 0)})
@@ -1995,8 +1997,6 @@ else:
             indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
-
-
 # -----------------------------
 # FOOTER (Copyright)
 # -----------------------------
