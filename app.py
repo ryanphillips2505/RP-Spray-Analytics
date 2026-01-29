@@ -2544,7 +2544,7 @@ else:
             small_font = Font(bold=True, size=11)
 
             # Title
-            ws.merge_cells("A1:I1")
+            ws.merge_cells("A1:H1")
             ws["A1"] = f"Individual Spray Summary — {p}"
             ws["A1"].font = title_font
             ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
@@ -2554,7 +2554,7 @@ else:
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
             # Set column widths for the field area
-            for col_letter in list("ABCDEFGHI"):
+            for col_letter in list("ABCDEFGH"):
                 if col_letter not in ("A", "B"):
                     ws.column_dimensions[col_letter].width = 11
             ws.column_dimensions["A"].width = 18
@@ -2581,24 +2581,24 @@ else:
 
             # Outfield
             gb, fb = gbfb("LF")
-            box(3, 2, 4, 4, field_fill, f"LF\nGB {gb}  |  FB {fb}")
+            box(3, 1, 4, 3, field_fill, f"LF\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("CF")
-            box(2, 5, 3, 6, field_fill, f"CF\nGB {gb}  |  FB {fb}")
+            box(2, 4, 3, 5, field_fill, f"CF\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("RF")
-            box(3, 7, 4, 9, field_fill, f"RF\nGB {gb}  |  FB {fb}")
+            box(3, 6, 4, 8, field_fill, f"RF\nGB {gb}  |  FB {fb}")
 
             # Infield
             gb, fb = gbfb("3B")
-            box(6, 2, 7, 3, dirt_fill, f"3B\nGB {gb}  |  FB {fb}")
+            box(6, 1, 7, 2, dirt_fill, f"3B\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("SS")
-            box(5, 4, 6, 5, dirt_fill, f"SS\nGB {gb}  |  FB {fb}")
+            box(5, 3, 6, 4, dirt_fill, f"SS\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("2B")
-            box(5, 6, 6, 7, dirt_fill, f"2B\nGB {gb}  |  FB {fb}")
+            box(5, 5, 6, 6, dirt_fill, f"2B\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("1B")
-            box(6, 8, 7, 9, dirt_fill, f"1B\nGB {gb}  |  FB {fb}")
+            box(6, 7, 7, 8, dirt_fill, f"1B\nGB {gb}  |  FB {fb}")
 
             gb, fb = gbfb("P")
-            box(7, 5, 8, 6, dirt_fill, f"P\nGB {gb}  |  FB {fb}")
+            box(7, 4, 8, 5, dirt_fill, f"P\nGB {gb}  |  FB {fb}")
 
             ws["A12"] = "Selected Stat Totals"
             ws["A12"].font = small_font
