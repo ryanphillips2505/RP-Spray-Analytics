@@ -1982,13 +1982,24 @@ with stat_edit_slot.container():
 
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
-                if st.button("All", key=f"{cols_key}__all", use_container_width=True):
-                    st.session_state[cols_key] = list(all_cols)
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                if st.button("None", key=f"{cols_key}__none", use_container_width=True):
-                    st.session_state[cols_key] = ["Player"] if "Player" in all_cols else []
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
             with c3:
                 st.caption(" ")
+
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
+            if all_clicked or none_clicked:
+                for _col in all_cols:
+                    _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
+                    _k = f"{cols_key}__cb__{_safe}"
+                    if _col == "Player":
+                        st.session_state[_k] = True
+                    else:
+                        st.session_state[_k] = True if all_clicked else False
+
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
+                st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
             if "Player" in all_cols:
@@ -2027,13 +2038,24 @@ with stat_edit_slot.container():
 
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
-                if st.button("All", key=f"{cols_key}__all", use_container_width=True):
-                    st.session_state[cols_key] = list(all_cols)
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                if st.button("None", key=f"{cols_key}__none", use_container_width=True):
-                    st.session_state[cols_key] = ["Player"] if "Player" in all_cols else []
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
             with c3:
                 st.caption(" ")
+
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
+            if all_clicked or none_clicked:
+                for _col in all_cols:
+                    _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
+                    _k = f"{cols_key}__cb__{_safe}"
+                    if _col == "Player":
+                        st.session_state[_k] = True
+                    else:
+                        st.session_state[_k] = True if all_clicked else False
+
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
+                st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
             if "Player" in all_cols:
@@ -2194,8 +2216,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         )
         ws.conditional_formatting.add(data_range, heat_rule)
 
-    # highlight UNKNOWN > 0
-    if "UNKNOWN" in df_season.columns:
+    # highlight UNKNOWN > 0 (only if there are data rows)
+    if end_row >= start_row and "UNKNOWN" in df_season.columns:
         unk_idx = list(df_season.columns).index("UNKNOWN") + 1
         unk_col = get_column_letter(unk_idx)
         unk_range = f"{unk_col}{start_row}:{unk_col}{end_row}"
