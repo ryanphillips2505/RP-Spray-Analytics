@@ -210,7 +210,6 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
         teams = data.get("teams", {}) or {}
         branding = data.get("team_branding", {}) or {}
 
-TEAM_CODE, team_key = require_team_access_option1()
         cfg = None
         for _, t in teams.items():
             if str(t.get("team_code", "")).strip().upper() == str(team_code).strip().upper():
