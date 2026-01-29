@@ -12,6 +12,7 @@ import re
 import hashlib
 import httpx
 import time  # anti-stuck processing lock + failsafe unlock
+import traceback
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -306,11 +307,12 @@ COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO
 # Running event tracking (NOT balls in play)
 RUN_KEYS = [
     # Stolen Bases
-    "SB", "SB-2B", "SB-3B",
+    "SB", "SB-2B", "SB-3B", "SB-H",
     # Caught Stealing
-    "CS", "CS-2B", "CS-3B",
+    "CS", "CS-2B", "CS-3B", "CS-H",
+    # Defensive Indifference
+    "DI", "DI-2B", "DI-3B", "DI-H",
 ]
-
 # -----------------------------
 # PITCHING (YUKON) — IP / K / BB / STRIKE%
 # -----------------------------
@@ -318,10 +320,12 @@ HALF_INNING_RE = re.compile(r"^(Top|Bottom)\s+\d+(?:st|nd|rd|th)?\s*-\s*(.+?)\s*
 OUTS_MARKER_RE = re.compile(r"^\s*([123])\s+Outs?\s*$", re.IGNORECASE)
 
 PBP_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+pitching\b")
+PBP_NOW_PITCHING_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+(?:now\s+)?pitching\b")
 PBP_IN_FOR_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+for\s+pitcher\b")
-# Lineup change: 'Lineup changed: L Thiel in at pitcher'
+# GameChanger often uses: "Lineup changed: J Smith in at pitcher"
 PBP_IN_AT_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+at\s+pitcher\b", re.IGNORECASE)
-PBP_FIELDER_PITCHER_RE = re.compile(r"\bpitcher\s+([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\b", re.IGNORECASE)
+# Another variant: "Lineup changed: J Smith in for A Brown, pitching"
+PBP_IN_FOR_X_PITCHING_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+for\s+[A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+,\s*pitching\b", re.IGNORECASE)
 
 BALL_TOK_RE = re.compile(r"\bBall\s+[1234]\b", re.IGNORECASE)
 STRIKE_TOK_RE = re.compile(r"\bStrike\s+[123]\b", re.IGNORECASE)
@@ -340,21 +344,19 @@ def parse_outs_marker(line: str) -> Optional[int]:
 
 def parse_pitcher_from_line(line: str) -> Optional[str]:
     s = (line or "").strip().strip('"')
-    m = PBP_PITCHER_RE.search(s)
-    if m:
-        return m.group(1).strip()
-    m = PBP_IN_FOR_PITCHER_RE.search(s)
-    if m:
-        return m.group(1).strip()
 
-    m = PBP_IN_AT_PITCHER_RE.search(s)
-    if m:
-        return m.group(1).strip()
+    # Highest-signal patterns first (GC substitutions)
+    for rx in (PBP_IN_AT_PITCHER_RE, PBP_IN_FOR_X_PITCHING_RE):
+        m = rx.search(s)
+        if m:
+            return m.group(1).strip()
 
-    # Fielding text: '... grounds out, pitcher G Hoke to first baseman ...'
-    m = PBP_FIELDER_PITCHER_RE.search(s)
-    if m:
-        return m.group(1).strip()
+    # Standard "X pitching" patterns
+    for rx in (PBP_NOW_PITCHING_RE, PBP_PITCHER_RE, PBP_IN_FOR_PITCHER_RE):
+        m = rx.search(s)
+        if m:
+            return m.group(1).strip()
+
     return None
 
 def count_pitch_tokens(line: str) -> Tuple[int, int]:
@@ -404,7 +406,7 @@ def outs_to_ip_str(outs: int) -> str:
     return f"{inn}.{rem}"
 
 # -----------------------------
-# TEAM NAME MATCHING (PBP) — reliable defense/offense detection
+# TEAM NAME MATCHING (PBP) — for reliable defense/offense detection
 # -----------------------------
 _TEAM_STOPWORDS = {"varsity","jv","freshman","frosh","hs","high","school","baseball"}
 
@@ -414,13 +416,31 @@ def _team_tokens(name: str):
     toks = [t for t in toks if t and t not in _TEAM_STOPWORDS and len(t) >= 3]
     return set(toks)
 
-def team_matches_pbp(batting_team: str, our_team_name: str) -> bool:
-    """True if the half-inning header team name appears to be OUR team (token overlap)."""
+def _norm_team(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    # drop common suffix words that GC appends
+    for w in sorted(_TEAM_STOPWORDS, key=len, reverse=True):
+        s = re.sub(rf"\b{re.escape(w)}\b", "", s).strip()
+        s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def team_matches_pbp(batting_team: str, our_team_name: str, exact: bool = False) -> bool:
+    """
+    True if the half-inning header team name appears to be OUR team.
+
+    - exact=True: use normalized string equality (best when we've inferred the exact header string)
+    - exact=False: token overlap fallback (robust but less precise)
+    """
+    if exact:
+        return _norm_team(batting_team) == _norm_team(our_team_name)
+
     bt = _team_tokens(batting_team)
     ot = _team_tokens(our_team_name)
     if not bt or not ot:
         return False
     return len(bt.intersection(ot)) > 0
+
 
 
 
@@ -676,6 +696,24 @@ def get_batter_name(line: str, roster: set[str]):
     if len(last_matches) == 1:
         return last_matches[0]
 
+    return None
+
+
+def infer_our_team_name_from_pbp(lines, roster):
+    """Infer OUR team name as it appears in half-inning headers by finding a header followed by a roster batter."""
+    current_batting = None
+    for raw in lines:
+        s = (raw or "").strip().strip('"')
+        s = re.sub(r"\([^)]*\)", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        maybe = parse_batting_team_from_half(s)
+        if maybe:
+            current_batting = maybe
+            continue
+        if current_batting:
+            b = get_batter_name(s, roster)
+            if b:
+                return current_batting
     return None
 
 
@@ -967,15 +1005,12 @@ create index if not exists processed_games_team_idx
 
 
 def _show_db_error(e: Exception, label: str):
-    st.error(f"**{label}**")
+    st.error(f"{label}")
+    # Always show useful error details (message + traceback)
     try:
-        parts = [f"type: {type(e)}"]
-        for attr in ("message", "details", "hint", "code"):
-            if hasattr(e, attr):
-                val = getattr(e, attr)
-                if val:
-                    parts.append(f"{attr}: {val}")
-        st.code("\n".join(parts), language="text")
+        st.code(f"type: {type(e)}
+repr: {e!r}", language="text")
+        st.code(traceback.format_exc(), language="text")
     except Exception:
         st.write(str(e))
 
@@ -995,7 +1030,7 @@ If it still errors after running the SQL, your Streamlit **secrets** are wrong.
 @st.cache_resource(show_spinner=False)
 def get_supabase() -> Client:
     url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_SERVICE_KEY", "").strip()  # service role key (server-side only)
+    key = (st.secrets.get("SUPABASE_SERVICE_ROLE_KEY") or st.secrets.get("SUPABASE_SERVICE_KEY") or "").strip()  # service role key
     if not url or not key:
         raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in Streamlit secrets.")
     return create_client(url, key)
@@ -1887,63 +1922,71 @@ if process_clicked:
         current_pitcher = "UNKNOWN_P"
         current_batting_team = None
         last_outs_in_half = 0
-        # Determine OUR team name as it appears in GC half-inning headers.
-        # This is the only reliable way to know when we're on defense.
-        team_pbp_name = (TEAM_CFG.get("team_name", "") or "").strip().lower()
+        team_pbp_name = (TEAM_CFG.get("team_name", "") or "").strip()
         inferred_pbp_team = infer_our_team_name_from_pbp(lines, current_roster)
-        if inferred_pbp_team:
-            team_pbp_name = inferred_pbp_team.strip().lower()
-        if not team_pbp_name:
-            team_pbp_name = (selected_team or "").strip().lower()
 
+        # If we can infer OUR exact half-inning header label from roster batters,
+        # use exact match mode for defense/offense (much more accurate).
+        team_name_exact = ""
+        exact_match_mode = False
+        if inferred_pbp_team:
+            team_name_exact = inferred_pbp_team.strip()
+            exact_match_mode = True
+        elif team_pbp_name:
+            team_name_exact = team_pbp_name
+        else:
+            team_name_exact = (selected_team or "").strip()
+
+        # keep legacy variable for downstream code
+        team_pbp_name = team_name_exact
         pending_outs = 0
         pending_pitches = 0
         pending_strikes = 0
 
-        for i in range(len(lines)):
-            line = lines[i]
+        for line in lines:
             clean_line = line.strip().strip('"')
             clean_line = re.sub(r"\([^)]*\)", "", clean_line)
             clean_line = re.sub(r"\s+", " ", clean_line).strip()
             line_lower = clean_line.lower()
 
-            # --- Track half inning ---
+            # --- Track half inning + current pitcher (for Yukon pitching) ---
             maybe_batting = parse_batting_team_from_half(clean_line)
             if maybe_batting:
-                # new half-inning: flush any pending counters into the last known pitcher
-                if pending_outs or pending_pitches:
-                    pname_final = current_pitcher or "UNKNOWN_P"
-                    game_pitching.setdefault(pname_final, empty_pitching_stat())
-                    game_pitching[pname_final]["OUTS"] += int(pending_outs)
-                    game_pitching[pname_final]["PITCHES"] += int(pending_pitches)
-                    game_pitching[pname_final]["STRIKES"] += int(pending_strikes)
-                pending_outs = pending_pitches = pending_strikes = 0
-
                 current_batting_team = maybe_batting
                 last_outs_in_half = 0
+                pending_outs = 0
+                pending_pitches = 0
+                pending_strikes = 0
+                # New half-inning: don't carry pitcher forward implicitly
+                current_pitcher = "UNKNOWN_P"
 
-            # Are WE on defense right now? (Opponent batting.)
-            # Figure out if WE are on defense.
-            # Prefer an exact half-inning team-name match if we were able to infer our header name from the PBP.
-            is_team_defense = False
-            if current_batting_team:
-                if inferred_pbp_team:
-                    is_team_defense = (current_batting_team.strip().lower() != inferred_pbp_team.strip().lower())
-                else:
-                    # Fallback (token overlap)
-                    is_team_defense = (not team_matches_pbp(current_batting_team, team_pbp_name))
+            # Defense/offense detection: we only credit Yukon pitching when the OTHER team is batting
+            # Defense/offense detection:
+            #  - Primary: half-inning header team name (Top/Bottom ... - TEAM)
+            #  - Failsafe: if we see one of OUR roster hitters in the line, we are on offense even if header was missed
+            _our_batter = get_batter_name(clean_line, current_roster)
+            if _our_batter:
+                is_team_defense = False
+            else:
+                is_team_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name, exact=exact_match_mode))
 
-            # Update current pitcher ONLY while on defense (prevents opponent pitcher bleed)
+            # Only update *our* current pitcher while on defense (prevents opponent pitcher bleed)
             maybe_p = parse_pitcher_from_line(clean_line)
             if is_team_defense and maybe_p:
                 current_pitcher = maybe_p
-                # If we accrued outs/pitches before GC said who was pitching, assign them now.
-                if pending_outs or pending_pitches:
+
+                # If we previously saw outs before GC stated the pitcher, assign them now
+                # If we previously saw outs/pitches before GC stated the pitcher, assign them now
+                if (current_pitcher and current_pitcher != "UNKNOWN_P") and (pending_outs > 0 or pending_pitches > 0):
                     game_pitching.setdefault(current_pitcher, empty_pitching_stat())
-                    game_pitching[current_pitcher]["OUTS"] += int(pending_outs)
-                    game_pitching[current_pitcher]["PITCHES"] += int(pending_pitches)
-                    game_pitching[current_pitcher]["STRIKES"] += int(pending_strikes)
-                    pending_outs = pending_pitches = pending_strikes = 0
+                    if pending_outs > 0:
+                        game_pitching[current_pitcher]["OUTS"] += int(pending_outs)
+                        pending_outs = 0
+                    if pending_pitches > 0:
+                        game_pitching[current_pitcher]["PITCHES"] += int(pending_pitches)
+                        game_pitching[current_pitcher]["STRIKES"] += int(pending_strikes)
+                        pending_pitches = 0
+                        pending_strikes = 0
 
             # Outs by delta (IP accuracy)
             outs_now = parse_outs_marker(clean_line)
@@ -1951,32 +1994,27 @@ if process_clicked:
                 delta_outs = max(0, int(outs_now) - int(last_outs_in_half))
                 last_outs_in_half = int(outs_now)
                 if is_team_defense and delta_outs > 0:
-                    # IMPORTANT: GC often prints "1 Out" / "2 Outs" BEFORE the detail line that contains
-                    # "X pitching". If a pitcher change happened, the *next* detail line will name the new pitcher.
-                    look_pitcher = None
-                    for j in range(i + 1, min(i + 4, len(lines))):
-                        nxt = (lines[j] or "").strip().strip('"')
-                        nxt = re.sub(r"\([^)]*\)", "", nxt)
-                        nxt = re.sub(r"\s+", " ", nxt).strip()
-                        if not nxt:
-                            continue
-                        if parse_batting_team_from_half(nxt):
-                            break
-                        if parse_outs_marker(nxt) is not None:
-                            continue
-                        mp = parse_pitcher_from_line(nxt)
-                        if mp:
-                            look_pitcher = mp
-                            break
-
-                    # If we can see a pitcher on the play's detail line, use it for this out.
-                    out_pitcher = look_pitcher or current_pitcher
-                    if not out_pitcher or out_pitcher == "UNKNOWN_P":
+                    # GC often prints '3 Outs' BEFORE the line that contains 'X pitching'.
+                    # If we don't know the pitcher yet, hold outs and assign once pitcher appears.
+                    if (not current_pitcher) or (current_pitcher == "UNKNOWN_P"):
                         pending_outs += int(delta_outs)
                     else:
-                        game_pitching.setdefault(out_pitcher, empty_pitching_stat())
-                        game_pitching[out_pitcher]["OUTS"] += int(delta_outs)
+                        pname = current_pitcher
+                        game_pitching.setdefault(pname, empty_pitching_stat())
+                        game_pitching[pname]["OUTS"] += int(delta_outs)
 
+            # If the half-inning ended (3 outs) and we still never saw a pitcher line,
+            # bucket any held outs/pitches to UNKNOWN_P for that half (so IP stays correct).
+            if is_team_defense and outs_now == 3 and (pending_outs > 0 or pending_pitches > 0) and (current_pitcher == "UNKNOWN_P"):
+                game_pitching.setdefault("UNKNOWN_P", empty_pitching_stat())
+                if pending_outs > 0:
+                    game_pitching["UNKNOWN_P"]["OUTS"] += int(pending_outs)
+                    pending_outs = 0
+                if pending_pitches > 0:
+                    game_pitching["UNKNOWN_P"]["PITCHES"] += int(pending_pitches)
+                    game_pitching["UNKNOWN_P"]["STRIKES"] += int(pending_strikes)
+                    pending_pitches = 0
+                    pending_strikes = 0
             # K / BB from event detail lines (avoid header double-count)
             if is_team_defense:
                 pname = current_pitcher or "UNKNOWN_P"
@@ -1992,6 +2030,7 @@ if process_clicked:
                 # Strike% from visible pitch tokens
                 p_ct, s_ct = count_pitch_tokens(clean_line)
                 if p_ct > 0:
+                    # If pitcher not known yet in this defensive segment, hold pitches and assign once pitcher appears.
                     if (not pname) or (pname == "UNKNOWN_P"):
                         pending_pitches += int(p_ct)
                         pending_strikes += int(s_ct)
@@ -2000,6 +2039,7 @@ if process_clicked:
                         game_pitching[pname]["PITCHES"] += int(p_ct)
                         game_pitching[pname]["STRIKES"] += int(s_ct)
 
+                # HBP: add +1 pitch only if the line doesn't already include visible pitch tokens
                 # HBP: add +1 pitch only if the line doesn't already include visible pitch tokens
                 if is_hbp_detail(clean_line) and p_ct == 0:
                     if (not pname) or (pname == "UNKNOWN_P"):
@@ -2058,26 +2098,11 @@ if process_clicked:
                 game_team[combo_key] += 1
                 game_players[batter][combo_key] += 1
 
-        # Finalize any pending outs/pitches for the last defensive segment (EOF case)
-        if pending_outs > 0 or pending_pitches > 0:
-            pname_final = current_pitcher if (current_pitcher and current_pitcher != "UNKNOWN_P") else "UNKNOWN_P"
-            game_pitching.setdefault(pname_final, empty_pitching_stat())
-            if pending_outs > 0:
-                game_pitching[pname_final]["OUTS"] += int(pending_outs)
-            if pending_pitches > 0:
-                game_pitching[pname_final]["PITCHES"] += int(pending_pitches)
-                game_pitching[pname_final]["STRIKES"] += int(pending_strikes)
-            pending_outs = 0
-            pending_pitches = 0
-            pending_strikes = 0
-
         add_game_to_season(season_team, season_players, game_team, game_players)
 
         # --- Merge game pitching into season pitching ---
         if "season_pitching" not in locals() or season_pitching is None:
             season_pitching = {}
-
-        # Merge this game's pitching into season pitching (additive)
         for pn, pst in (game_pitching or {}).items():
             pname = str(pn).strip().strip('"') or "UNKNOWN_P"
             season_pitching.setdefault(pname, empty_pitching_stat())
@@ -2158,6 +2183,9 @@ st.subheader("⚾ Pitching – SEASON TO DATE")
 pitch_rows = []
 for pname in sorted((season_pitching or {}).keys(), key=lambda x: x.lower()):
     pst = ensure_pitching_keys((season_pitching or {}).get(pname, {}))
+    # skip any empty / accidental entries
+    if sum(int(pst.get(k, 0) or 0) for k in ["OUTS","K","BB","PITCHES","STRIKES"]) == 0:
+        continue
     outs = int(pst.get("OUTS", 0) or 0)
     pitches = int(pst.get("PITCHES", 0) or 0)
     strikes = int(pst.get("STRIKES", 0) or 0)
