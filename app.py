@@ -2544,7 +2544,7 @@ else:
             small_font = Font(bold=True, size=11)
 
             # Title
-            ws.merge_cells("A1:H1")
+            ws.merge_cells("A1:G1")
             ws["A1"] = f"Individual Spray Summary — {p}"
             ws["A1"].font = title_font
             ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
@@ -2554,7 +2554,7 @@ else:
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
             # Set column widths for the field area
-            for col_letter in list("ABCDEFGH"):
+            for col_letter in list("ABCDEFG"):
                 if col_letter not in ("A", "B"):
                     ws.column_dimensions[col_letter].width = 11
             ws.column_dimensions["A"].width = 18
