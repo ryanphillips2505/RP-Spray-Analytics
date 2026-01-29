@@ -4,6 +4,7 @@
 # Unauthorized copying, distribution, or resale prohibited.
 
 import streamlit as st
+st.cache_data.clear()
 import os
 import json
 import base64
@@ -106,7 +107,6 @@ st.set_page_config(
     page_icon="⚾",
     layout="wide",
 )
-st.cache_data.clear()
 
 # ============================
 # ACCESS CODE GATE
@@ -168,38 +168,49 @@ def license_is_active(team_code: str) -> bool:
         return False
         
 
-def require_team_access_option1():
-    """Option 1 login: coach enters Team Code + Team Key (no dropdowns, no licensing).
-    Data is isolated by (TEAM_CODE_SAFE, team_key)."""
+def require_team_access():
+    codes = load_team_codes()
+
     if "team_code" not in st.session_state:
-        st.session_state.team_code = ""
-    if "team_key" not in st.session_state:
-        st.session_state.team_key = ""
+        st.session_state.team_code = None
 
-    st.title("RP Spray Analytics")
-    st.markdown("### Team Login")
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        tc_in = st.text_input("Team Code (example: YUKON, MUSTANG)", value=st.session_state.team_code).strip().upper()
-    with c2:
-        tk_in = st.text_input("Team Key (keep this private)", value=st.session_state.team_key, type="password").strip()
+    # Already logged in
+    if st.session_state.team_code in codes:
+        return st.session_state.team_code, codes[st.session_state.team_code]
 
-    team_code_safe = re.sub(r"[^A-Za-z0-9_-]", "", tc_in)
+    # Login screen
+    st.title("Welcome to the Jungle of RP Spray Analytics")
+    st.markdown("### Enter Access Code")
 
-    if st.button("Enter"):
-        if not team_code_safe or not tk_in:
-            st.error("Enter both Team Code and Team Key")
+    code_raw = st.text_input("Access Code", value="")
+
+    if st.button("Enter into the door of Success"):
+        code = code_raw.strip().upper()
+
+        if not code:
+            st.error("Enter an access code")
         else:
-            st.session_state.team_code = team_code_safe
-            st.session_state.team_key = tk_in
-            st.rerun()
+            hashed = hash_access_code(code).strip().lower()
+            row = codes.get(code)
+            stored = str((row or {}).get("code_hash", "")).strip().lower()
 
-    # Stop until logged in
-    if not st.session_state.team_code or not st.session_state.team_key:
-        st.stop()
+            if row and hashed == stored:
+                team_code = str(row.get("team_code", "")).strip().upper()
 
-    return st.session_state.team_code, st.session_state.team_key
-TEAM_CODE, team_key = require_team_access_option1()
+                if not license_is_active(team_code):
+                    st.error("License inactive. Contact admin.")
+                    st.stop()
+
+                st.session_state.team_code = team_code
+                st.rerun()
+
+            else:
+                st.error("Invalid access code")
+
+    st.stop()
+    return None, None
+
+TEAM_CODE, _ = require_team_access()
 
 # Load full team config (logo/background/data_folder) from TEAM_CONFIG/team_settings.json
 def _load_team_cfg_from_file(team_code: str) -> dict:
@@ -210,6 +221,7 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
         teams = data.get("teams", {}) or {}
         branding = data.get("team_branding", {}) or {}
 
+        # Find the team entry whose team_code matches TEAM_CODE
         cfg = None
         for _, t in teams.items():
             if str(t.get("team_code", "")).strip().upper() == str(team_code).strip().upper():
@@ -1454,18 +1466,36 @@ with st.sidebar:
 
    
 # -----------------------------
-# TEAM (Option 1)
+# TEAM SELECTION (SUPABASE - PERSISTENT)
 # -----------------------------
-# No team dropdowns. Each school is isolated by:
-#   TEAM_CODE_SAFE (Team Code) + team_key (Team Key)
 
-TEAM_CODE_SAFE = str(TEAM_CODE).strip().upper()
-selected_team = TEAM_CFG.get("team_name") or TEAM_CODE_SAFE
+teams = db_list_teams(TEAM_CODE_SAFE)
 
-st.markdown(f"### Team: **{selected_team}**")
-st.caption("Data is separated by Team Code + Team Key.")
+if not teams:
+    st.warning("No teams found yet for THIS access code. Create one below.")
+else:
+    team_names = [t.get("team_name", "Unnamed Team") for t in teams]
+    selected_team = st.selectbox("Choose a team:", team_names)
+
+    selected_row = next((t for t in teams if t.get("team_name") == selected_team), teams[0])
+    team_key = selected_row.get("team_key") or safe_team_key(selected_team)
+
+with st.expander("➕ Add a new team (stored in Supabase)"):
+    new_team_name = st.text_input("New team name:")
+    if st.button("Create Team"):
+        if not new_team_name.strip():
+            st.error("Enter a team name first.")
+        else:
+            new_key = safe_team_key(new_team_name)
+            db_upsert_team(TEAM_CODE_SAFE, new_key, new_team_name.strip(), "")
+            st.success("Team created. Reloading…")
+            st.rerun()
+
+if not teams:
+    st.stop()
 
 st.markdown("---")
+
 # -----------------------------
 # ROSTER UI (SUPABASE - PERSISTENT)
 # -----------------------------
@@ -2211,6 +2241,9 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
 
 
 
