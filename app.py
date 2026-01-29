@@ -1298,15 +1298,6 @@ h1.app-title {{
 }}
 </style>
 
-<style>
-/* Pull the Stat Edit control up to visually align with the section header */
-.stat-edit-wrap {{
-    display: flex;
-    justify-content: flex-end;
-    margin-top: -22px !important;
-    margin-bottom: 6px !important;
-}}
-</style>
 """,
     unsafe_allow_html=True,
 )
@@ -1923,7 +1914,7 @@ col_order = [c for c in col_order if c in df_season.columns]
 df_season = df_season[col_order]
 
 # -----------------------------
-# 👁️ Column Visibility (per selected opponent/team)
+# Stat Edit (column visibility) — per selected opponent/team
 # -----------------------------
 # Hide Streamlit's built-in dataframe download icon (you already have download buttons below)
 st.markdown(
@@ -1939,13 +1930,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown("""
+# UI polish for the Stat Edit control (does NOT touch title sizing)
+st.markdown(
+    """
     <style>
-      /* Tighten and right-align the Stat Edit button row */
-      .stat-edit-wrap { display: flex; justify-content: flex-end; margin-top: -10px; margin-bottom: 2px; }
-      .stat-edit-wrap [data-testid="stPopoverButton"] { border-radius: 10px !important; }
+    .stat-edit-wrap {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: -6px !important;
+        margin-bottom: 6px !important;
+    }
+    .stat-edit-wrap button { white-space: nowrap; }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # Keyed by team/opponent so each opponent can have its own preferred view
 cols_key = f"season_cols__{TEAM_CODE_SAFE}__{team_key}"
@@ -1954,18 +1954,21 @@ cols_key = f"season_cols__{TEAM_CODE_SAFE}__{team_key}"
 if cols_key not in st.session_state:
     st.session_state[cols_key] = list(df_season.columns)
 
-# Force Player to always stay visible
 all_cols = list(df_season.columns)
-default_cols = st.session_state[cols_key]
+default_cols = list(st.session_state.get(cols_key, []))
 
 # Keep only columns that still exist (safe if you add/remove stats later)
 default_cols = [c for c in default_cols if c in all_cols]
-# UI row (top-right Stat Edit above the table)
-if "Player" in all_cols:
-ctrl_left, ctrl_right = st.columns([10, 2])
+
+# Always keep Player visible
+if "Player" in all_cols and "Player" not in default_cols:
+    default_cols = ["Player"] + default_cols
+
+# Top-right Stat Edit control above the table (no extra dead-space row)
+ctrl_left, ctrl_right = st.columns([11, 1])
 with ctrl_right:
     st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
-    # Prefer popover (newer Streamlit). Fallback to expander if popover isn't available.
+
     if hasattr(st, "popover"):
         with st.popover("Stat Edit"):
             st.caption("Show / hide stats in this table")
@@ -1983,7 +1986,6 @@ with ctrl_right:
                 default=default_cols,
             )
 
-    # Always keep Player
     if "Player" in all_cols and "Player" not in picked:
         picked = ["Player"] + picked
 
@@ -1991,10 +1993,8 @@ with ctrl_right:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Apply the selection
-picked_cols = [c for c in st.session_state[cols_key] if c in all_cols]
+picked_cols = [c for c in st.session_state.get(cols_key, []) if c in all_cols]
 df_show = df_season[picked_cols] if picked_cols else df_season
-
-st.dataframe(df_show, use_container_width=True) picked_cols else df_season
 
 st.dataframe(df_show, use_container_width=True)
 
@@ -2240,7 +2240,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
