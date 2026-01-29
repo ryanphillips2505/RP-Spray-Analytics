@@ -315,7 +315,7 @@ RUN_KEYS = [
 # PITCHING (YUKON) — IP / K / BB / STRIKE%
 # -----------------------------
 HALF_INNING_RE = re.compile(r"^(Top|Bottom)\s+\d+(?:st|nd|rd|th)?\s*-\s*(.+?)\s*$", re.IGNORECASE)
-OUTS_MARKER_RE = re.compile(r"^\s*([123])\s+Outs?\s*$", re.IGNORECASE)
+OUTS_MARKER_RE = re.compile(r"\b([123])\s+Outs?\b", re.IGNORECASE)
 
 PBP_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+pitching\b")
 PBP_NOW_PITCHING_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+(?:now\s+)?pitching\b")
@@ -337,7 +337,7 @@ def parse_batting_team_from_half(line: str) -> Optional[str]:
 
 def parse_outs_marker(line: str) -> Optional[int]:
     s = (line or "").strip().strip('"')
-    m = OUTS_MARKER_RE.match(s)
+    m = OUTS_MARKER_RE.search(s)
     return int(m.group(1)) if m else None
 
 def parse_pitcher_from_line(line: str) -> Optional[str]:
@@ -968,16 +968,18 @@ create index if not exists processed_games_team_idx
 """.strip()
 
 
+
 def _show_db_error(e: Exception, label: str):
-    st.error(str(label))
+    st.error(f"{label}")
     try:
-        st.code(f"{type(e).__name__}: {e!r}", language="text")
+        st.code(f"type: {type(e)}\\nrepr: {e!r}", language="text")
         st.code(traceback.format_exc(), language="text")
     except Exception:
         st.write(str(e))
 
 
 def _render_supabase_fix_block():
+
     st.error("Supabase tables are missing or mismatched (season_totals / processed_games).")
     ("### Fix (copy/paste into Supabase → SQL Editor → Run)")
     st.code(SUPABASE_SETUP_SQL, language="sql")
@@ -1950,20 +1952,23 @@ if process_clicked:
                         pending_pitches = 0
                         pending_strikes = 0
 
-            # Outs by delta (IP accuracy)
+            # Outs (IP accuracy) — derive from play results (like BIP), not the scoreboard "2 Outs" line.
+            outs_add = outs_from_result_header(clean_line)
+            if outs_add == 0:
+                outs_add = outs_from_event_detail(clean_line)
+
+            if is_team_defense and outs_add > 0:
+                if (not current_pitcher) or (current_pitcher == "UNKNOWN_P"):
+                    pending_outs += int(outs_add)
+                else:
+                    pname = current_pitcher
+                    game_pitching.setdefault(pname, empty_pitching_stat())
+                    game_pitching[pname]["OUTS"] += int(outs_add)
+
+            # Optional: if GC prints "3 Outs" anywhere, use it only to end-of-half resync
             outs_now = parse_outs_marker(clean_line)
-            if outs_now is not None:
-                delta_outs = max(0, int(outs_now) - int(last_outs_in_half))
-                last_outs_in_half = int(outs_now)
-                if is_team_defense and delta_outs > 0:
-                    # GC often prints '3 Outs' BEFORE the line that contains 'X pitching'.
-                    # If we don't know the pitcher yet, hold outs and assign once pitcher appears.
-                    if (not current_pitcher) or (current_pitcher == "UNKNOWN_P"):
-                        pending_outs += int(delta_outs)
-                    else:
-                        pname = current_pitcher
-                        game_pitching.setdefault(pname, empty_pitching_stat())
-                        game_pitching[pname]["OUTS"] += int(delta_outs)
+            if outs_now == 3:
+                last_outs_in_half = 3
 
             # If the half-inning ended (3 outs) and we still never saw a pitcher line,
             # bucket any held outs/pitches to UNKNOWN_P for that half (so IP stays correct).
@@ -1990,7 +1995,9 @@ if process_clicked:
                     game_pitching[pname]["BB"] += 1
 
                 # Strike% from visible pitch tokens
-                p_ct, s_ct = count_pitch_tokens(clean_line)
+                p_ct, s_ct = (0, 0)
+                if ("Ball " in clean_line) or ("Strike " in clean_line) or ("Foul" in clean_line) or ("In play" in clean_line):
+                    p_ct, s_ct = count_pitch_tokens(clean_line)
                 if p_ct > 0:
                     # If pitcher not known yet in this defensive segment, hold pitches and assign once pitcher appears.
                     if (not pname) or (pname == "UNKNOWN_P"):
