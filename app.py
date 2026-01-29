@@ -2585,17 +2585,17 @@ else:
             gb, fb = gbfb("CF")
             box(2, 4, 3, 5, field_fill, f"CF\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("RF")
-            box(3, 6, 4, 8, field_fill, f"RF\nGB {gb}  |  FB {fb}")
+            box(3, 6, 4, 7, field_fill, f"RF\nGB {gb}  |  FB {fb}")
 
             # Infield
             gb, fb = gbfb("3B")
-            box(6, 1, 7, 2, dirt_fill, f"3B\nGB {gb}  |  FB {fb}")
+            box(6, 2, 7, 3, dirt_fill, f"3B\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("SS")
             box(5, 3, 6, 4, dirt_fill, f"SS\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("2B")
             box(5, 5, 6, 6, dirt_fill, f"2B\nGB {gb}  |  FB {fb}")
             gb, fb = gbfb("1B")
-            box(6, 7, 7, 8, dirt_fill, f"1B\nGB {gb}  |  FB {fb}")
+            box(6, 6, 7, 7, dirt_fill, f"1B\nGB {gb}  |  FB {fb}")
 
             gb, fb = gbfb("P")
             box(7, 4, 8, 5, dirt_fill, f"P\nGB {gb}  |  FB {fb}")
