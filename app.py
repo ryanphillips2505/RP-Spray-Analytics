@@ -1903,7 +1903,7 @@ with st.expander("📝 Coaches Scouting Notes (prints on Excel/CSV)"):
         st.caption("These notes are private to this team + access code, saved in Supabase, and will be embedded into your Excel/CSV export.")
 
 df_export = df_season.copy()
-notes_text = str(coach_notes or "").strip()
+notes_text = str(st.session_state.get(notes_key, coach_notes) or "").strip()
 
 # -----------------------------
 # EXPORTS (CSV + Excel)
@@ -2113,7 +2113,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
