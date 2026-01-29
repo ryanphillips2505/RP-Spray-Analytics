@@ -2162,10 +2162,12 @@ if notes_box_text:
 csv_bytes = _csv_text.encode("utf-8")
 safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
 
+df_xl = df_season[visible_cols].copy()
+
 out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
-    df_season.to_excel(writer, index=False, sheet_name=sheet_name)
+    df_xl.to_excel(writer, index=False, sheet_name=sheet_name)
 
     ws = writer.book[sheet_name]
     ws.freeze_panes = "A2"
@@ -2181,10 +2183,10 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         cell.alignment = header_align
         cell.fill = header_fill
 
-    for col_idx, col_name in enumerate(df_season.columns, start=1):
+    for col_idx, col_name in enumerate(df_xl.columns, start=1):
         col_letter = get_column_letter(col_idx)
         max_len = len(str(col_name))
-        sample = df_season[col_name].astype(str).head(60).tolist()
+        sample = df_xl[col_name].astype(str).head(60).tolist()
         for v in sample:
             max_len = max(max_len, len(v))
         ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 22)
@@ -2217,8 +2219,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         ws.conditional_formatting.add(data_range, heat_rule)
 
     # highlight UNKNOWN > 0 (only if there are data rows)
-    if end_row >= start_row and "UNKNOWN" in df_season.columns:
-        unk_idx = list(df_season.columns).index("UNKNOWN") + 1
+    if end_row >= start_row and "UNKNOWN" in df_xl.columns:
+        unk_idx = list(df_xl.columns).index("UNKNOWN") + 1
         unk_col = get_column_letter(unk_idx)
         unk_range = f"{unk_col}{start_row}:{unk_col}{end_row}"
         unk_fill = OPFill("solid", fgColor="FFC7CE")
