@@ -2015,9 +2015,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
         ws.merge_cells(box_range)
         cell = ws[start_cell]
-        cell.value = f"COACH NOTES:\n\n{notes_text}"
-
-{notes_box_text}"
+        cell.value = f"COACH NOTES:\n\n{notes_box_text}"
         cell.alignment = Alignment(wrap_text=True, vertical="top")
 
         # Make the box rows taller
@@ -2115,6 +2113,184 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+        # Make the box rows taller
+        for r in range(top_row, top_row + box_height):
+            ws.row_dimensions[r].height = 20
+
+        # Thick border around the whole box (perimeter only)
+        thick = Side(style="thick")
+        for r in range(top_row, top_row + box_height):
+            for c in range(left_col, right_col + 1):
+                addr = f"{get_column_letter(c)}{r}"
+                cur = ws[addr].border
+                left = thick if c == left_col else cur.left
+                right = thick if c == right_col else cur.right
+                top = thick if r == top_row else cur.top
+                bottom = thick if r == top_row + box_height - 1 else cur.bottom
+                ws[addr].border = Border(left=left, right=right, top=top, bottom=bottom)
+
+
+excel_bytes = out.getvalue()
+
+col_dl1, col_dl2 = st.columns(2)
+with col_dl1:
+    st.download_button(
+        label="📊 Download Season Report (Excel)",
+        data=excel_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+with col_dl2:
+    st.download_button(
+        label="📄 Download Season Report (CSV - Google Sheets Ready)",
+        data=csv_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
+        mime="text/csv",
+    )
+
+st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
+
+# ✅ Individual dropdown matches roster by default; archived optional
+if show_archived:
+    indiv_candidates = sorted(set(active_players + archived_list))
+else:
+    indiv_candidates = active_players
+
+# ✅ FIX: allow players with 0 stats to still appear (so re-added guys show back up)
+selectable_players = [p for p in indiv_candidates if p in season_players]
+
+if not selectable_players:
+    st.info("No hitters found for this roster yet.")
+else:
+    selected_player = st.selectbox("Choose a hitter:", selectable_players)
+    stats = season_players[selected_player]
+
+    # If they have all zeros, still show it (coach can verify they exist)
+    if not any(stats.get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS)):
+        st.info("This player is on the roster but has no recorded events yet (all zeros).")
+
+    indiv_rows = [{"Type": loc, "Count": stats.get(loc, 0)} for loc in LOCATION_KEYS]
+    indiv_rows.append({"Type": "GB (total)", "Count": stats.get("GB", 0)})
+    indiv_rows.append({"Type": "FB (total)", "Count": stats.get("FB", 0)})
+
+    for ck in COMBO_KEYS:
+        indiv_rows.append({"Type": ck, "Count": stats.get(ck, 0)})
+
+    # running events
+    indiv_rows.append({"Type": "SB", "Count": stats.get("SB", 0)})
+    indiv_rows.append({"Type": "CS", "Count": stats.get("CS", 0)})
+    indiv_rows.append({"Type": "DI", "Count": stats.get("DI", 0)})
+    for rk in RUN_KEYS:
+        if rk not in ["SB", "CS", "DI"]:
+            indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
+
+    st.table(indiv_rows)
+# -----------------------------
+# FOOTER (Copyright)
+# -----------------------------
+st.markdown(
+    """
+    <style>
+    .rp-footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(0,0,0,0.12);
+        text-align: center;
+        font-size: 0.85rem;
+        color: rgba(0,0,0,0.55);
+    }
+    </style>
+
+    <div class="rp-footer">
+        © 2026 RP Spray Analytics. All rights reserved.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 
 
