@@ -1884,27 +1884,7 @@ row_left, row_right = st.columns([8, 2])
 with row_left:
     show_archived = st.checkbox("Show archived players (not on current roster)", value=False)
 with row_right:
-    if hasattr(st, "popover"):
-        with st.popover("Stat Edit"):
-            st.caption("Show / hide stats in this table")
-            picked = st.multiselect(
-                "Show these columns",
-                options=all_cols,
-                default=default_cols,
-            )
-    else:
-        with st.expander("Stat Edit", expanded=False):
-            st.caption("Show / hide stats in this table")
-            picked = st.multiselect(
-                "Show these columns",
-                options=all_cols,
-                default=default_cols,
-            )
-
-    if "Player" in all_cols and "Player" not in picked:
-        picked = ["Player"] + picked
-
-    st.session_state[cols_key] = picked
+    stat_edit_slot = st.empty()  # filled after df_season is built
 st.markdown("<div style='margin-top:-14px'></div>", unsafe_allow_html=True)
 
 season_rows = []
@@ -1988,11 +1968,11 @@ default_cols = [c for c in default_cols if c in all_cols]
 if "Player" in all_cols and "Player" not in default_cols:
     default_cols = ["Player"] + default_cols
 
-# Top-right Stat Edit control above the table (no extra dead-space row)
-ctrl_left, ctrl_right = st.columns([11, 1])
-with ctrl_right:
-    st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
 
+
+# Render Stat Edit in the same row as the archived checkbox (top-right)
+with stat_edit_slot:
+    st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
     if hasattr(st, "popover"):
         with st.popover("Stat Edit"):
             st.caption("Show / hide stats in this table")
@@ -2012,7 +1992,6 @@ with ctrl_right:
 
     if "Player" in all_cols and "Player" not in picked:
         picked = ["Player"] + picked
-
     st.session_state[cols_key] = picked
     st.markdown("</div>", unsafe_allow_html=True)
 
