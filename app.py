@@ -1928,6 +1928,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown("""
+    <style>
+      /* Tighten and right-align the Stat Edit button row */
+      .stat-edit-wrap { display: flex; justify-content: flex-end; margin-top: -6px; margin-bottom: 6px; }
+      .stat-edit-wrap [data-testid="stPopoverButton"] { border-radius: 10px !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 # Keyed by team/opponent so each opponent can have its own preferred view
 cols_key = f"season_cols__{TEAM_CODE_SAFE}__{team_key}"
 
@@ -1945,18 +1953,21 @@ if "Player" in all_cols and "Player" not in default_cols:
     default_cols = ["Player"] + default_cols
 
 # UI row (puts the eyeball control above the table, like a “toolbar”)
-left_spacer, right_controls = st.columns([6, 2])
+left_spacer, right_controls = st.columns([9, 2])
 with right_controls:
+    st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
     # Prefer popover (newer Streamlit). Fallback to expander if popover isn't available.
     if hasattr(st, "popover"):
-        with st.popover("👁️ Columns"):
+        with st.popover("Stat Edit"):
+            st.caption("Show / hide stats in this table")
             picked = st.multiselect(
                 "Show these columns",
                 options=all_cols,
                 default=default_cols,
             )
     else:
-        with st.expander("👁️ Columns", expanded=False):
+        with st.expander("Stat Edit", expanded=False):
+            st.caption("Show / hide stats in this table")
             picked = st.multiselect(
                 "Show these columns",
                 options=all_cols,
@@ -1968,6 +1979,7 @@ with right_controls:
         picked = ["Player"] + picked
 
     st.session_state[cols_key] = picked
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Apply the selection
 picked_cols = [c for c in st.session_state[cols_key] if c in all_cols]
