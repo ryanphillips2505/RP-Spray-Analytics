@@ -319,6 +319,8 @@ OUTS_MARKER_RE = re.compile(r"^\s*([123])\s+Outs?\s*$", re.IGNORECASE)
 
 PBP_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+pitching\b")
 PBP_IN_FOR_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+for\s+pitcher\b")
+# Lineup change: 'Lineup changed: L Thiel in at pitcher'
+PBP_IN_AT_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+at\s+pitcher\b", re.IGNORECASE)
 PBP_FIELDER_PITCHER_RE = re.compile(r"\bpitcher\s+([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\b", re.IGNORECASE)
 
 BALL_TOK_RE = re.compile(r"\bBall\s+[1234]\b", re.IGNORECASE)
@@ -342,6 +344,10 @@ def parse_pitcher_from_line(line: str) -> Optional[str]:
     if m:
         return m.group(1).strip()
     m = PBP_IN_FOR_PITCHER_RE.search(s)
+    if m:
+        return m.group(1).strip()
+
+    m = PBP_IN_AT_PITCHER_RE.search(s)
     if m:
         return m.group(1).strip()
 
@@ -1917,7 +1923,15 @@ if process_clicked:
                 last_outs_in_half = 0
 
             # Are WE on defense right now? (Opponent batting.)
-            is_team_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
+            # Figure out if WE are on defense.
+            # Prefer an exact half-inning team-name match if we were able to infer our header name from the PBP.
+            is_team_defense = False
+            if current_batting_team:
+                if inferred_pbp_team:
+                    is_team_defense = (current_batting_team.strip().lower() != inferred_pbp_team.strip().lower())
+                else:
+                    # Fallback (token overlap)
+                    is_team_defense = (not team_matches_pbp(current_batting_team, team_pbp_name))
 
             # Update current pitcher ONLY while on defense (prevents opponent pitcher bleed)
             maybe_p = parse_pitcher_from_line(clean_line)
@@ -2062,6 +2076,8 @@ if process_clicked:
         # --- Merge game pitching into season pitching ---
         if "season_pitching" not in locals() or season_pitching is None:
             season_pitching = {}
+
+        # Merge this game's pitching into season pitching (additive)
         for pn, pst in (game_pitching or {}).items():
             pname = str(pn).strip().strip('"') or "UNKNOWN_P"
             season_pitching.setdefault(pname, empty_pitching_stat())
