@@ -319,6 +319,8 @@ OUTS_MARKER_RE = re.compile(r"^\s*([123])\s+Outs?\s*$", re.IGNORECASE)
 
 PBP_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+pitching\b")
 PBP_IN_FOR_PITCHER_RE = re.compile(r"\b([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\s+in\s+for\s+pitcher\b")
+# Fielding-play form: "... pitcher G Hoke to first baseman ..."
+PBP_FIELDER_PITCHER_RE = re.compile(r"\bpitcher\s+([A-Z]\s+[A-Za-z][A-Za-z'\-\.#0-9]+)\b")
 
 BALL_TOK_RE = re.compile(r"\bBall\s+[1234]\b", re.IGNORECASE)
 STRIKE_TOK_RE = re.compile(r"\bStrike\s+[123]\b", re.IGNORECASE)
@@ -341,6 +343,9 @@ def parse_pitcher_from_line(line: str) -> Optional[str]:
     if m:
         return m.group(1).strip()
     m = PBP_IN_FOR_PITCHER_RE.search(s)
+    if m:
+        return m.group(1).strip()
+    m = PBP_FIELDER_PITCHER_RE.search(s)
     if m:
         return m.group(1).strip()
     return None
@@ -1896,6 +1901,7 @@ if process_clicked:
         game_pitching = {}
         current_pitcher = "UNKNOWN_P"
         current_batting_team = None
+        in_def_half = False  # True when OUR team is pitching (opponent batting)
         last_outs_in_half = 0
         team_pbp_name = (TEAM_CFG.get("team_name", "") or "").strip().lower()
         inferred_pbp_team = infer_our_team_name_from_pbp(lines, current_roster)
@@ -1916,29 +1922,27 @@ if process_clicked:
             # --- Track half inning + current pitcher (for Yukon pitching) ---
             maybe_batting = parse_batting_team_from_half(clean_line)
             if maybe_batting:
-                # We are crossing a half-inning boundary. Finalize any pending outs/pitches
-                # from the *previous* half-inning (do NOT flush at '3 Outs' because GC often
-                # prints the pitcher line after that).
-                prev_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
-                if prev_defense and (pending_outs > 0 or pending_pitches > 0):
-                    target_p = current_pitcher if (current_pitcher and current_pitcher != "UNKNOWN_P") else "UNKNOWN_P"
-                    game_pitching.setdefault(target_p, empty_pitching_stat())
+                # Finalize any pending outs/pitches from the prior defensive half-inning
+                if in_def_half and (pending_outs > 0 or pending_pitches > 0):
+                    target = current_pitcher if (current_pitcher and current_pitcher != "UNKNOWN_P") else "UNKNOWN_P"
+                    game_pitching.setdefault(target, empty_pitching_stat())
                     if pending_outs > 0:
-                        game_pitching[target_p]["OUTS"] += int(pending_outs)
+                        game_pitching[target]["OUTS"] += int(pending_outs)
                         pending_outs = 0
                     if pending_pitches > 0:
-                        game_pitching[target_p]["PITCHES"] += int(pending_pitches)
-                        game_pitching[target_p]["STRIKES"] += int(pending_strikes)
+                        game_pitching[target]["PITCHES"] += int(pending_pitches)
+                        game_pitching[target]["STRIKES"] += int(pending_strikes)
                         pending_pitches = 0
                         pending_strikes = 0
 
                 current_batting_team = maybe_batting
+                # Determine whether this half-inning is defense for the selected team
+                in_def_half = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
                 last_outs_in_half = 0
                 pending_outs = 0
                 pending_pitches = 0
                 pending_strikes = 0
-                # IMPORTANT: do NOT reset current_pitcher here.
-                # Pitchers usually carry across multiple half-innings; GC often doesn't restate it.
+                # Do NOT reset current_pitcher here — GC often doesn't restate the pitcher each inning.
 
             # Defense/offense detection: we only credit Yukon pitching when the OTHER team is batting
             # Defense/offense detection:
@@ -1948,7 +1952,7 @@ if process_clicked:
             if _our_batter:
                 is_team_defense = False
             else:
-                is_team_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
+                is_team_defense = in_def_half
 
             # Only update *our* current pitcher while on defense (prevents opponent pitcher bleed)
             maybe_p = parse_pitcher_from_line(clean_line)
@@ -1982,7 +1986,7 @@ if process_clicked:
                         pname = current_pitcher
                         game_pitching.setdefault(pname, empty_pitching_stat())
                         game_pitching[pname]["OUTS"] += int(delta_outs)
-# K / BB from event detail lines (avoid header double-count)
+            # K / BB from event detail lines (avoid header double-count)
             if is_team_defense:
                 pname = current_pitcher or "UNKNOWN_P"
 
@@ -2064,21 +2068,6 @@ if process_clicked:
                 combo_key = f"{ball_type}-{loc}"
                 game_team[combo_key] += 1
                 game_players[batter][combo_key] += 1
-
-
-        # --- Finalize any pending pitching (last half-inning) ---
-        final_defense = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name))
-        if final_defense and (pending_outs > 0 or pending_pitches > 0):
-            target_p = current_pitcher if (current_pitcher and current_pitcher != "UNKNOWN_P") else "UNKNOWN_P"
-            game_pitching.setdefault(target_p, empty_pitching_stat())
-            if pending_outs > 0:
-                game_pitching[target_p]["OUTS"] += int(pending_outs)
-                pending_outs = 0
-            if pending_pitches > 0:
-                game_pitching[target_p]["PITCHES"] += int(pending_pitches)
-                game_pitching[target_p]["STRIKES"] += int(pending_strikes)
-                pending_pitches = 0
-                pending_strikes = 0
 
         add_game_to_season(season_team, season_players, game_team, game_players)
 
@@ -2381,5 +2370,3 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
