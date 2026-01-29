@@ -335,6 +335,95 @@ def parse_batting_team_from_half(line: str) -> Optional[str]:
     m = HALF_INNING_RE.match(s)
     return m.group(2).strip() if m else None
 
+
+
+# -----------------------------
+# PITCHING OUTS (PBP-ONLY, BIP-STYLE)
+# -----------------------------
+# We DO NOT trust GC scoreboard lines ("| 2 Outs") for IP.
+# We count outs from consistent result headers + detail phrases.
+_OUT_EVENT_HEADER_MAP = {
+    "strikeout": 1,
+    "ground out": 1,
+    "fly out": 1,
+    "line out": 1,
+    "pop out": 1,
+    "bunt out": 1,
+    "runner out": 1,
+    "sacrifice fly": 1,
+    "sac fly": 1,
+    "double play": 2,
+    "triple play": 3,
+}
+
+# Detail phrases that indicate an out happened (used only when header line wasn't available)
+_OUT_DETAIL_PATTERNS_1 = [
+    r"\bgrounds out\b",
+    r"\bflies out\b",
+    r"\bflied out\b",
+    r"\blines out\b",
+    r"\bpops out\b",
+    r"\bbunts out\b",
+    r"\bout at first\b",
+    r"\bout at second\b",
+    r"\bout at third\b",
+    r"\bout at home\b",
+    r"\bis out\b",
+    r"\bcalled out\b",
+]
+
+# Basepath outs
+_OUT_DETAIL_PATTERNS_BASEPATH = [
+    r"\bpicked off\b",
+    r"\bpickoff\b",
+    r"\bcaught stealing\b",
+    r"\bout stealing\b",
+]
+
+# Avoid double counting from narration-only lines
+_OUT_IGNORE_PHRASES = [
+    "half-inning ended by out on the base paths",
+]
+
+def outs_from_result_header(clean_line: str) -> int:
+    """Count outs from GC event header lines (e.g., 'Strikeout', 'Ground Out')."""
+    s = (clean_line or "").strip().strip('"').lower()
+    return int(_OUT_EVENT_HEADER_MAP.get(s, 0) or 0)
+
+def outs_from_event_detail(clean_line: str) -> int:
+    """Fallback out detection from detail lines (only used when header line isn't present)."""
+    s = (clean_line or "").strip().strip('"').lower()
+    if not s:
+        return 0
+    for bad in _OUT_IGNORE_PHRASES:
+        if bad in s:
+            return 0
+
+    # Double/triple play phrases in detail
+    if "triple play" in s:
+        return 3
+    if "double play" in s:
+        return 2
+
+    # Dropped 3rd strike out-at-first is an out
+    if "dropped 3rd strike" in s and ("out at first" in s or "out at" in s):
+        return 1
+
+    # Strikeout detail line
+    if ("strikes out" in s) or ("called out on strikes" in s):
+        return 1
+
+    # Basepath outs (Runner Out header usually exists, but this catches phrasing inside pitch lines)
+    for p in _OUT_DETAIL_PATTERNS_BASEPATH:
+        if re.search(p, s):
+            return 1
+
+    # Generic out phrases
+    for p in _OUT_DETAIL_PATTERNS_1:
+        if re.search(p, s):
+            return 1
+
+    return 0
 def parse_outs_marker(line: str) -> Optional[int]:
     s = (line or "").strip().strip('"')
     m = OUTS_MARKER_RE.search(s)
@@ -1884,6 +1973,7 @@ if process_clicked:
         # --- Yukon pitching (IP / K / BB / Strike%) ---
         game_pitching = {}
         current_pitcher = "UNKNOWN_P"
+        last_def_pitcher = None  # persist our pitcher across innings when GC stops naming him
         current_batting_team = None
         last_outs_in_half = 0
         team_pbp_name = (TEAM_CFG.get("team_name", "") or "").strip()
@@ -1921,8 +2011,20 @@ if process_clicked:
                 pending_outs = 0
                 pending_pitches = 0
                 pending_strikes = 0
-                # New half-inning: don't carry pitcher forward implicitly
-                current_pitcher = "UNKNOWN_P"
+
+                # New half-inning:
+                # - If we are on DEFENSE and we already know our pitcher from a prior inning,
+                #   keep him until a pitcher-change is detected (GC often doesn't repeat the name).
+                # - Otherwise start unknown until GC reveals pitcher (K/BB/ball hit to pitcher/sub line).
+                try:
+                    _def_now = bool(current_batting_team) and (not team_matches_pbp(current_batting_team, team_pbp_name, exact=exact_match_mode))
+                except Exception:
+                    _def_now = False
+
+                if _def_now and last_def_pitcher:
+                    current_pitcher = last_def_pitcher
+                else:
+                    current_pitcher = "UNKNOWN_P"
 
             # Defense/offense detection: we only credit Yukon pitching when the OTHER team is batting
             # Defense/offense detection:
@@ -1936,8 +2038,8 @@ if process_clicked:
 
             # Only update *our* current pitcher while on defense (prevents opponent pitcher bleed)
             maybe_p = parse_pitcher_from_line(clean_line)
-            if is_team_defense and maybe_p:
-                current_pitcher = maybe_p
+            \1
+                last_def_pitcher = current_pitcher
 
                 # If we previously saw outs before GC stated the pitcher, assign them now
                 # If we previously saw outs/pitches before GC stated the pitcher, assign them now
