@@ -2100,6 +2100,27 @@ with stat_edit_slot.container():
 picked_cols = [c for c in st.session_state.get(cols_key, []) if c in all_cols]
 df_show = df_season[picked_cols] if picked_cols else df_season
 
+
+# -----------------------------
+# CURRENT VIEW COLUMNS (Stat Edit -> downloads)
+# -----------------------------
+# Build visible_cols safely for both table display and downloads.
+try:
+    _vc = st.session_state.get(cols_key, list(df_season.columns))
+except Exception:
+    _vc = list(df_season.columns)
+
+if not isinstance(_vc, (list, tuple)):
+    _vc = list(df_season.columns)
+
+visible_cols = [c for c in _vc if c in df_season.columns]
+
+# Always keep Player if it exists
+if "Player" in df_season.columns and "Player" not in visible_cols:
+    visible_cols = ["Player"] + visible_cols
+
+if len(visible_cols) == 0:
+    visible_cols = list(df_season.columns)
 st.dataframe(df_show, use_container_width=True)
 
 # -----------------------------
@@ -2131,7 +2152,7 @@ with st.expander("📝 Coaches Scouting Notes (prints on Excel/CSV)", expanded=F
 
 notes_box_text = str(st.session_state.get(notes_key, "") or "").strip()
 
-_csv_text = df_season[visible_cols].to_csv(index=False)
+_csv_text = (df_season[visible_cols].to_csv(index=False) if (df_season is not None and not df_season.empty) else '')
 
 # CSV can't merge cells, but we can push notes to the bottom for printing
 if notes_box_text:
