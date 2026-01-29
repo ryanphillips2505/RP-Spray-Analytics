@@ -2347,30 +2347,193 @@ else:
 # ✅ Allow zero-stat players to appear (roster + archived behavior stays consistent)
 selectable_players = [p for p in indiv_candidates if p in season_players]
 
+# -----------------------------
+# INDIV STAT LIST + STAT EDIT
+# -----------------------------
+INDIV_TYPES = []
+INDIV_TYPES += list(LOCATION_KEYS)
+INDIV_TYPES += ["GB (total)", "FB (total)"]
+INDIV_TYPES += list(COMBO_KEYS)
+
+# running events (include SB/CS/DI + base-specific run keys)
+INDIV_TYPES += ["SB", "CS", "DI"]
+for _rk in RUN_KEYS:
+    if _rk not in INDIV_TYPES:
+        INDIV_TYPES.append(_rk)
+
+# de-dupe while preserving order
+_seen = set()
+INDIV_TYPES = [x for x in INDIV_TYPES if not (x in _seen or _seen.add(x))]
+
+indiv_key = f"indiv_types__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}"
+if indiv_key not in st.session_state:
+    st.session_state[indiv_key] = list(INDIV_TYPES)
+
 if not selectable_players:
     st.info("No hitters found for this roster yet.")
 else:
-    selected_player = st.selectbox("Choose a hitter:", selectable_players)
+    # Tight row: hitter select (left) + Stat Edit (right)
+    i_left, i_right = st.columns([8, 2])
+    with i_left:
+        selected_player = st.selectbox("Choose a hitter:", selectable_players, key=f"indiv_player__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}")
+
+    with i_right:
+        if hasattr(st, "popover"):
+            _stat_edit_container = st.popover("Stat Edit")
+        else:
+            _stat_edit_container = st.expander("Stat Edit", expanded=False)
+
+        with _stat_edit_container:
+            st.caption("Toggle which stats show in the individual table + downloads")
+            flt = st.text_input("Search", value="", placeholder="Type to filter stats...", key=f"{indiv_key}__flt")
+
+            b1, b2, b3 = st.columns([1, 1, 2])
+            with b1:
+                all_clicked = st.button("All", key=f"{indiv_key}__all", use_container_width=True)
+            with b2:
+                none_clicked = st.button("None", key=f"{indiv_key}__none", use_container_width=True)
+            with b3:
+                st.caption(" ")
+
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
+            if all_clicked or none_clicked:
+                for _t in INDIV_TYPES:
+                    _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_t))
+                    st.session_state[f"{indiv_key}__cb__{_safe}"] = True if all_clicked else False
+                st.session_state[indiv_key] = list(INDIV_TYPES) if all_clicked else []
+                st.rerun()
+
+            picked_set = set(st.session_state.get(indiv_key, []))
+
+            view_types = INDIV_TYPES
+            if flt.strip():
+                q = flt.strip().lower()
+                view_types = [t for t in INDIV_TYPES if q in str(t).lower()]
+
+            colA, colB, colC = st.columns(3)
+            grid = [colA, colB, colC]
+            for i, t in enumerate(view_types):
+                target = grid[i % 3]
+                safe_t = re.sub(r"[^A-Za-z0-9_]+", "_", str(t))
+                cur_val = st.session_state.get(f"{indiv_key}__cb__{safe_t}", t in picked_set)
+                new_val = target.checkbox(str(t), value=cur_val, key=f"{indiv_key}__cb__{safe_t}")
+                if new_val:
+                    picked_set.add(t)
+                else:
+                    picked_set.discard(t)
+
+            st.session_state[indiv_key] = [t for t in INDIV_TYPES if t in picked_set]
+
+    # Current individual view types
+    indiv_types_selected = st.session_state.get(indiv_key, list(INDIV_TYPES))
+    if not indiv_types_selected:
+        st.warning("No stats selected. Use Stat Edit to choose at least one stat.")
+        indiv_types_selected = list(INDIV_TYPES)
+
+    # -----------------------------
+    # DISPLAY (selected player)
+    # -----------------------------
     stats = season_players[selected_player]
-
-    indiv_rows = [{"Type": loc, "Count": stats.get(loc, 0)} for loc in LOCATION_KEYS]
-    indiv_rows.append({"Type": "GB (total)", "Count": stats.get("GB", 0)})
-    indiv_rows.append({"Type": "FB (total)", "Count": stats.get("FB", 0)})
-
-    for ck in COMBO_KEYS:
-        indiv_rows.append({"Type": ck, "Count": stats.get(ck, 0)})
-
-    # running events
-    indiv_rows.append({"Type": "SB", "Count": stats.get("SB", 0)})
-    indiv_rows.append({"Type": "CS", "Count": stats.get("CS", 0)})
-    indiv_rows.append({"Type": "DI", "Count": stats.get("DI", 0)})
-    for rk in RUN_KEYS:
-        if rk not in ["SB", "CS", "DI"]:
-            indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
+    indiv_rows = []
+    for t in indiv_types_selected:
+        if t == "GB (total)":
+            indiv_rows.append({"Type": t, "Count": stats.get("GB", 0)})
+        elif t == "FB (total)":
+            indiv_rows.append({"Type": t, "Count": stats.get("FB", 0)})
+        else:
+            indiv_rows.append({"Type": t, "Count": stats.get(t, 0)})
 
     st.table(indiv_rows)
 
+    # -----------------------------
+    # DOWNLOADS (match Stat Edit)
+    #   - Excel: one sheet per player
+    #   - CSV: long format (Player, Type, Count)
+    # -----------------------------
+    dl_a, dl_b = st.columns([1, 1])
+    safe_team_ind = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
 
+    def _sheet_name(name: str) -> str:
+        # Excel sheet name max = 31, cannot contain : \ / ? * [ ]
+        s = re.sub(r"[:\\/\?\*\[\]]+", " ", str(name)).strip()
+        s = re.sub(r"\s+", " ", s)
+        return s[:31] if s else "Player"
+
+    # Excel bytes (one sheet per player)
+    excel_out = BytesIO()
+    with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
+        used = set()
+        for p in selectable_players:
+            st_p = season_players[p]
+            rows_p = []
+            for t in indiv_types_selected:
+                if t == "GB (total)":
+                    rows_p.append({"Type": t, "Count": st_p.get("GB", 0)})
+                elif t == "FB (total)":
+                    rows_p.append({"Type": t, "Count": st_p.get("FB", 0)})
+                else:
+                    rows_p.append({"Type": t, "Count": st_p.get(t, 0)})
+
+            df_p = pd.DataFrame(rows_p)
+            sn = _sheet_name(p)
+
+            base = sn
+            k = 1
+            while sn in used:
+                suffix = f"_{k}"
+                sn = (base[:31 - len(suffix)] + suffix) if len(base) + len(suffix) > 31 else (base + suffix)
+                k += 1
+            used.add(sn)
+
+            df_p.to_excel(writer, index=False, sheet_name=sn)
+            ws = writer.book[sn]
+            ws.freeze_panes = "A2"
+
+            from openpyxl.styles import Font, Alignment, PatternFill as OPFill
+            header_font = Font(bold=True)
+            header_align = Alignment(horizontal="center", vertical="center")
+            header_fill = OPFill("solid", fgColor="EDEDED")
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.alignment = header_align
+                cell.fill = header_fill
+
+            ws.column_dimensions["A"].width = 18
+            ws.column_dimensions["B"].width = 10
+
+    excel_bytes = excel_out.getvalue()
+
+    # CSV bytes (long format)
+    long_rows = []
+    for p in selectable_players:
+        st_p = season_players[p]
+        for t in indiv_types_selected:
+            if t == "GB (total)":
+                cnt = st_p.get("GB", 0)
+            elif t == "FB (total)":
+                cnt = st_p.get("FB", 0)
+            else:
+                cnt = st_p.get(t, 0)
+            long_rows.append({"Player": p, "Type": t, "Count": cnt})
+
+    df_long = pd.DataFrame(long_rows)
+    csv_long_bytes = df_long.to_csv(index=False).encode("utf-8")
+
+    with dl_a:
+        st.download_button(
+            label="📥 Download Individual Spray (Excel - sheets per player)",
+            data=excel_bytes,
+            file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    with dl_b:
+        st.download_button(
+            label="📄 Download Individual Spray (CSV)",
+            data=csv_long_bytes,
+            file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.csv",
+            mime="text/csv",
+        )
 # -----------------------------
 # FOOTER (Copyright)
 # -----------------------------
