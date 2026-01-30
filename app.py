@@ -2552,18 +2552,15 @@ else:
         except Exception:
             _player_notes_dict = {}
         used = set()
+
+        # Safety: openpyxl requires at least one visible sheet
+        if not selectable_players:
+            pd.DataFrame().to_excel(writer, index=False, sheet_name="Player")
+            ws = writer.book["Player"]
+            ws["A1"].value = "No players available for Individual Spray export."
+            used.add("Player")
         for p in selectable_players:
             st_p = season_players.get(p, {})
-            rows_p = []
-            for t in indiv_types_selected:
-                if t == "GB (total)":
-                    rows_p.append({"Type": t, "Count": st_p.get("GB", 0)})
-                elif t == "FB (total)":
-                    rows_p.append({"Type": t, "Count": st_p.get("FB", 0)})
-                else:
-                    rows_p.append({"Type": t, "Count": st_p.get(t, 0)})
-
-            df_p = pd.DataFrame(rows_p)
             sn = _sheet_name(p)
 
             base = sn
@@ -2573,8 +2570,9 @@ else:
                 sn = (base[:31 - len(suffix)] + suffix) if len(base) + len(suffix) > 31 else (base + suffix)
                 k += 1
             used.add(sn)
-            # (Removed) full Type/Count stat list below — redundant with GB/FB boxes + SB/CS
-            # df_p.to_excel(writer, index=False, sheet_name=sn, startrow=12)
+
+            # Create an empty sheet (we write cells manually for a clean, MLB-style layout)
+            pd.DataFrame().to_excel(writer, index=False, sheet_name=sn)
             ws = writer.book[sn]
             # Local styles for notes + stat split (avoid NameError due to ordering)
             FONT_NAME = "Arial"  # Excel-safe font
@@ -2821,7 +2819,7 @@ else:
             # Coach worksheet block (RIGHT) — matches your highlighted area
             # -----------------------------
             start_row = 17
-            start_col = 8  # Column H (moved left for 1-page print)
+            start_col = 9  # Column I (moved left for 1-page print)
             col_atbat = start_col           # M
             col_result_start = start_col+1  # N
             col_result_end   = start_col+4  # Q
@@ -2916,6 +2914,16 @@ else:
             ws.page_setup.fitToHeight = 1
             ws.sheet_properties.pageSetUpPr.fitToPage = True
 
+        # Ensure at least one visible worksheet (prevents openpyxl IndexError)
+        try:
+            if getattr(writer, "book", None) is not None:
+                if len(writer.book.worksheets) == 0:
+                    writer.book.create_sheet("Player")
+                for _ws in writer.book.worksheets:
+                    _ws.sheet_state = "visible"
+                writer.book.active = 0
+        except Exception:
+            pass
 
     # Finish Excel bytes after writing all player sheets
     excel_bytes = excel_out.getvalue()
