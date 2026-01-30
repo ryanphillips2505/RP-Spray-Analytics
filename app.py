@@ -2255,7 +2255,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws = writer.book[sheet_name]
     ws.freeze_panes = "A2"
 
-    from openpyxl.styles import Font, Alignment, PatternFill as OPFill
 
     header_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -2550,6 +2549,7 @@ else:
             title_font = Font(name=FONT_NAME, size=16, bold=True)
             hdr_font = Font(name=FONT_NAME, size=11, bold=True)
             cell_font = Font(name=FONT_NAME, size=11, bold=False)
+            small_font = Font(name=FONT_NAME, size=10, color='444444')
             gbfb_font = Font(name=FONT_NAME, size=11, bold=True)
             gray_fill = OPFill("solid", fgColor="F2F2F2")
             grass_fill = OPFill("solid", fgColor="D9EAD3")  # lighter green
@@ -2667,7 +2667,7 @@ else:
                 pos_box(pos, r0, c0)
 
 
-# Keep grid tidy
+            # Keep grid tidy
             for rr in range(2, 9):
                 ws.row_dimensions[rr].height = 22
             ws["A12"] = "Selected Stat Totals"
@@ -2675,7 +2675,6 @@ else:
             ws["A12"].alignment = Alignment(horizontal="left", vertical="center")
 
 
-            from openpyxl.styles import Font, Alignment, PatternFill as OPFill
             header_font = Font(bold=True)
             header_align = Alignment(horizontal="center", vertical="center")
             header_fill = OPFill("solid", fgColor="EDEDED")
