@@ -2644,6 +2644,15 @@ else:
                     cell.fill = grass_fill
                     # keep background clean (no borders on grass)
                     cell.border = Border()
+            # Layout for AT BAT table (portrait-safe)
+            col_atbat = 1  # Column A
+            col_result_start, col_result_end = 2, 4  # B-D
+            col_grid_start, col_grid_end = 5, 12     # E-L (8 slim cols)
+            col_count = 13                           # M
+            col_notes_start, col_notes_end = 14, 17  # N-Q
+            start_row = 15  # header row for AT BAT table
+
+
 
             # Column widths tuned for PORTRAIT 1-page print (clean + "MLB" look)
             ws.column_dimensions[get_column_letter(col_atbat)].width = 6.0
