@@ -2922,77 +2922,167 @@ else:
 
             ws.column_dimensions["A"].width = 18
             ws.column_dimensions["B"].width = 10
-# --- Build blank "Overall Spray Chart" template under the SB/CS table (Excel-native formatting; no images) ---
+# --- Build "Overall Spray Chart" template (Excel formatting) under the SB/CS table ---
+# A true curved field outline cannot be drawn with cell borders alone.
+# To match your reference sheet closely, we insert a small FIELD OUTLINE image (left side only),
+# and we build the right-side table (At Bat / Result / Pitch Progression / Count / Notes)
+# using Excel cells, borders, and merges (fully print-safe).
+            def _get_field_only_png_path():
+                candidates = [
+                    os.path.join("assets", "overall_spray_field_only.png"),
+                    "overall_spray_field_only.png",
+                    os.path.join("assets", "overall_spray_template.png"),  # fallback if you keep the full template
+                    "overall_spray_template.png",
+                ]
+                for pth in candidates:
+                    try:
+                        if pth and os.path.exists(pth):
+                            return pth
+                    except Exception:
+                        pass
+                return None
+
+            def _draw_overall_spray_table(ws, top_row: int):
+                # Column map (tuned to print on one page next to the left chart area)
+                # Left chart uses A-L, table uses M-AD
+                thick = Side(style="medium", color="000000")
+                thin_side = Side(style="thin", color="000000")
+                thick_border = Border(left=thick, right=thick, top=thick, bottom=thick)
+                thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+                COL_ATBAT = 13      # M
+                COL_RESULT_L = 14   # N
+                COL_RESULT_R = 18   # R
+                COL_PITCH_L = 19    # S
+                COL_PITCH_R = 26    # Z (8 columns)
+                COL_COUNT = 27      # AA
+                COL_NOTES_L = 28    # AB
+                COL_NOTES_R = 30    # AD
+
+                # Widths
+                ws.column_dimensions["M"].width = 10
+                for col in ["N","O","P","Q","R"]:
+                    ws.column_dimensions[col].width = 12
+                for col in ["S","T","U","V","W","X","Y","Z"]:
+                    ws.column_dimensions[col].width = 3
+                ws.column_dimensions["AA"].width = 9
+                for col in ["AB","AC","AD"]:
+                    ws.column_dimensions[col].width = 12
+
+                header_font2 = Font(name=FONT_NAME, size=10, bold=True)
+                header_align2 = Alignment(horizontal="center", vertical="center")
+                body_font2 = Font(name=FONT_NAME, size=10, bold=False)
+
+                # Header row
+                ws.cell(row=top_row, column=COL_ATBAT, value="AT BAT #")
+                ws.merge_cells(start_row=top_row, start_column=COL_RESULT_L, end_row=top_row, end_column=COL_RESULT_R)
+                ws.cell(row=top_row, column=COL_RESULT_L, value="RESULT")
+                ws.merge_cells(start_row=top_row, start_column=COL_PITCH_L, end_row=top_row, end_column=COL_PITCH_R)
+                ws.cell(row=top_row, column=COL_PITCH_L, value="PITCH PROGRESSION")
+                ws.cell(row=top_row, column=COL_COUNT, value="COUNT")
+                ws.merge_cells(start_row=top_row, start_column=COL_NOTES_L, end_row=top_row, end_column=COL_NOTES_R)
+                ws.cell(row=top_row, column=COL_NOTES_L, value="NOTES")
+
+                # Style header cells (thick border across the full header span)
+                for cc in range(COL_ATBAT, COL_NOTES_R + 1):
+                    cell = ws.cell(row=top_row, column=cc)
+                    cell.font = header_font2
+                    cell.alignment = header_align2
+                    cell.border = thick_border
+                ws.row_dimensions[top_row].height = 20
+
+                # Body: 12 AB blocks, each 3 rows tall
+                block_h = 3
+                for i in range(12):
+                    r0 = top_row + 1 + i * block_h
+                    r1 = r0 + block_h - 1
+                    for rr in range(r0, r1 + 1):
+                        ws.row_dimensions[rr].height = 18
+
+                    # Merge the big text regions per block
+                    ws.merge_cells(start_row=r0, start_column=COL_ATBAT, end_row=r1, end_column=COL_ATBAT)
+                    ws.merge_cells(start_row=r0, start_column=COL_RESULT_L, end_row=r1, end_column=COL_RESULT_R)
+                    ws.merge_cells(start_row=r0, start_column=COL_COUNT, end_row=r1, end_column=COL_COUNT)
+                    ws.merge_cells(start_row=r0, start_column=COL_NOTES_L, end_row=r1, end_column=COL_NOTES_R)
+
+                    # AB label
+                    ab_cell = ws.cell(row=r0, column=COL_ATBAT, value=f"#{i+1}")
+                    ab_cell.font = body_font2
+                    ab_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                    # Thick borders for the whole block across M-AD
+                    for rr in range(r0, r1 + 1):
+                        for cc in range(COL_ATBAT, COL_NOTES_R + 1):
+                            ws.cell(row=rr, column=cc).border = thick_border
+
+                    # Pitch grid S-Z with thin internal borders
+                    for rr in range(r0, r1 + 1):
+                        for cc in range(COL_PITCH_L, COL_PITCH_R + 1):
+                            cell = ws.cell(row=rr, column=cc)
+                            cell.border = thin_border
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                    # Restore thick perimeter around pitch grid
+                    for cc in range(COL_PITCH_L, COL_PITCH_R + 1):
+                        ws.cell(row=r0, column=cc).border = Border(left=thin_side, right=thin_side, top=thick, bottom=thin_side)
+                        ws.cell(row=r1, column=cc).border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thick)
+                    for rr in range(r0, r1 + 1):
+                        ws.cell(row=rr, column=COL_PITCH_L).border = Border(left=thick, right=thin_side, top=thin_side, bottom=thin_side)
+                        ws.cell(row=rr, column=COL_PITCH_R).border = Border(left=thin_side, right=thick, top=thin_side, bottom=thin_side)
+
+                    ws.cell(row=r0, column=COL_RESULT_L).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                    ws.cell(row=r0, column=COL_COUNT).alignment = Alignment(horizontal="center", vertical="top")
+                    ws.cell(row=r0, column=COL_NOTES_L).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+
             try:
-                # Title row
-                title_row = 16
-                grid_top = 17
-                grid_mid_label = 28
-                grid_bottom = 34
+                TPL_ROW = 16
 
-                ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=8)
-                tcell = ws.cell(row=title_row, column=1, value="OVERALL SPRAY CHART")
-                tcell.font = Font(bold=True, size=14)
-                tcell.alignment = Alignment(horizontal="center", vertical="center")
-                ws.row_dimensions[title_row].height = 26
+                # Left side header
+                ws.merge_cells(start_row=TPL_ROW, start_column=1, end_row=TPL_ROW, end_column=12)  # A-L
+                hcell = ws.cell(row=TPL_ROW, column=1, value="OVERALL SPRAY CHART")
+                hcell.font = Font(name=FONT_NAME, size=12, bold=True)
+                hcell.alignment = Alignment(horizontal="center", vertical="center")
+                hcell.border = Border(left=Side(style="medium", color="000000"),
+                                      right=Side(style="medium", color="000000"),
+                                      top=Side(style="medium", color="000000"),
+                                      bottom=Side(style="medium", color="000000"))
+                ws.row_dimensions[TPL_ROW].height = 22
 
-                # Set column widths for an 8-col template (A:H)
-                for col_letter in list("ABCDEFGH"):
-                    ws.column_dimensions[col_letter].width = 7.5
+                # Big blank box under header (A-L)
+                box_top = TPL_ROW + 1
+                box_bottom = TPL_ROW + 36
+                left_thick = Side(style="medium", color="000000")
+                thin_black = Side(style="thin", color="000000")
+                for rr in range(box_top, box_bottom + 1):
+                    ws.row_dimensions[rr].height = 18
+                    for cc in range(1, 13):  # A-L
+                        cell = ws.cell(row=rr, column=cc)
+                        cell.value = None
+                        if rr in (box_top, box_bottom) or cc in (1, 12):
+                            cell.border = Border(
+                                left=left_thick if cc == 1 else thin_black,
+                                right=left_thick if cc == 12 else thin_black,
+                                top=left_thick if rr == box_top else thin_black,
+                                bottom=left_thick if rr == box_bottom else thin_black,
+                            )
+                        else:
+                            cell.border = Border()
+                        cell.fill = PatternFill("solid", fgColor="FFFFFF")
 
-                # Set row heights for writing space
-                for r in range(grid_top, grid_bottom + 1):
-                    ws.row_dimensions[r].height = 18
+                # Insert field-only image inside left box (optional but closest match)
+                _field_png = _get_field_only_png_path()
+                if _field_png:
+                    _fimg = XLImage(_field_png)
+                    _orig_w = getattr(_fimg, "width", 1) or 1
+                    TARGET_W = 520
+                    _scale = TARGET_W / float(_orig_w)
+                    _fimg.width = int(_orig_w * _scale)
+                    _fimg.height = int((getattr(_fimg, "height", 1) or 1) * _scale)
+                    ws.add_image(_fimg, f"A{TPL_ROW+2}")
 
-                # Header labels (Outfield)
-                def _merge_label(r, c1, c2, text):
-                    ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
-                    cell = ws.cell(row=r, column=c1, value=text)
-                    cell.font = Font(bold=True, size=11)
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                # Right side table
+                _draw_overall_spray_table(ws, top_row=TPL_ROW)
 
-                _merge_label(grid_top, 1, 2, "LF")
-                _merge_label(grid_top, 3, 4, "CF")
-                _merge_label(grid_top, 5, 6, "RF")
-                _merge_label(grid_top, 7, 8, "")  # spare space
-
-                # Header labels (Infield)
-                _merge_label(grid_mid_label, 1, 2, "3B")
-                _merge_label(grid_mid_label, 3, 4, "SS")
-                _merge_label(grid_mid_label, 5, 6, "2B")
-                _merge_label(grid_mid_label, 7, 8, "1B")
-
-                # Borders: thin internal, medium outer
-                thin = Side(style="thin", color="000000")
-                med = Side(style="medium", color="000000")
-
-                for r in range(grid_top, grid_bottom + 1):
-                    for c in range(1, 9):
-                        cell = ws.cell(row=r, column=c)
-                        # default thin border
-                        left = thin
-                        right = thin
-                        top = thin
-                        bottom = thin
-
-                        # outer box
-                        if c == 1:
-                            left = med
-                        if c == 8:
-                            right = med
-                        if r == grid_top:
-                            top = med
-                        if r == grid_bottom:
-                            bottom = med
-
-                        cell.border = Border(left=left, right=right, top=top, bottom=bottom)
-
-                # Ensure print fits 1 page
-                try:
-                    ws.page_setup.fitToWidth = 1
-                    ws.page_setup.fitToHeight = 1
-                except Exception:
-                    pass
             except Exception:
                 pass
     excel_bytes = excel_out.getvalue()
