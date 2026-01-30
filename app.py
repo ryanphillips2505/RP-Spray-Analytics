@@ -228,12 +228,12 @@ def require_team_access():
         return st.session_state.team_code, codes[st.session_state.team_code]
 
     # Login screen
-    st.title("Welcome to the Jungle of RP Spray Analytics")
+    st.title("Welcome to RP Spray Analytics")
     st.markdown("### Enter Access Code")
 
     code_raw = st.text_input("Access Code", value="")
 
-    if st.button("Enter into the door of Success"):
+    if st.button("Enter"):
         code = code_raw.strip().upper()
 
         if not code:
@@ -2507,6 +2507,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
