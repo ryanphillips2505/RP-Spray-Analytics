@@ -228,12 +228,12 @@ def require_team_access():
         return st.session_state.team_code, codes[st.session_state.team_code]
 
     # Login screen
-    st.title("Welcome to RP Spray Analytics")
+    st.title("Welcome to the Jungle of RP Spray Analytics")
     st.markdown("### Enter Access Code")
 
     code_raw = st.text_input("Access Code", value="")
 
-    if st.button("Enter"):
+    if st.button("Enter into the door of Success"):
         code = code_raw.strip().upper()
 
         if not code:
@@ -2215,6 +2215,37 @@ visible_cols = [c for c in _vc if c in df_season.columns]
 if "Player" in df_season.columns and "Player" not in visible_cols:
     visible_cols = ["Player"] + visible_cols
 
+# --- Export column order: keep things grouped for readability ---
+# We keep whatever the user selected via Stat Edit, but we re-order
+# within the export so GB stats are together, FB stats are together,
+# and baserunning stats are together.
+def _grouped_export_cols(cols: list) -> list:
+    cols = list(cols)
+    if not cols:
+        return cols
+
+    # Always keep Player first if present
+    player = ["Player"] if "Player" in cols else []
+    remaining = [c for c in cols if c != "Player"]
+
+    # Identify groups
+    gb_cols = [c for c in remaining if (c == "GB" or str(c).startswith("GB-"))]
+    fb_cols = [c for c in remaining if (c == "FB" or str(c).startswith("FB-"))]
+    run_cols = [c for c in remaining if c in RUN_KEYS]
+
+    # Everything else keeps its relative order
+    used = set(gb_cols) | set(fb_cols) | set(run_cols)
+    other_cols = [c for c in remaining if c not in used]
+
+    # Order: other (spray/location/combo/etc), then GB, then FB, then baserunning
+    return player + other_cols + gb_cols + fb_cols + run_cols
+
+# Re-order for export readability (GB grouped, FB grouped, baserunning grouped)
+visible_cols = _grouped_export_cols(visible_cols)
+
+# Re-order for export readability (GB grouped, FB grouped, baserunning grouped)
+visible_cols = _grouped_export_cols(visible_cols)
+
 if len(visible_cols) == 0:
     visible_cols = list(df_season.columns)
 st.dataframe(df_show, use_container_width=True)
@@ -2323,7 +2354,8 @@ if no_season_data:
     # Fallback so the app doesn't crash — still allows the page to load.
     df_xl = df_season.copy() if df_season is not None else None
 else:
-    df_xl = df_season[visible_cols].copy()
+    export_cols = _grouped_export_cols(visible_cols)
+    df_xl = df_season[export_cols].copy()
 
 out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
@@ -2335,17 +2367,18 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     # -----------------------------
     # TEAM HEADER (Row 1) + Watermark
     # -----------------------------
-    team_header = f"{selected_team} — RP Spray Analytics"
+    team_header = f"{selected_team}"
     last_col = get_column_letter(ws.max_column if ws.max_column else 1)
     ws.merge_cells(f"A1:{last_col}1")
     hcell = ws["A1"]
     hcell.value = team_header
-    hcell.font = Font(bold=True, size=16)
+    hcell.font = Font(bold=True, size=24)
     hcell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Optional spacer row (Row 2) for clean look
-    ws.row_dimensions[1].height = 26
-    ws.row_dimensions[2].height = 10
+    # Row heights (spruced): make the sheet easy to read
+    # (Coach Notes box rows will override later.)
+    ws.row_dimensions[1].height = 45
+    ws.row_dimensions[2].height = 45
 
     # Watermark for printing (header/footer)
     try:
@@ -2357,7 +2390,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws.freeze_panes = "A4"
 
 
-    header_font = Font(bold=True)
+    header_font = Font(bold=True, size=14)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     header_fill = PatternFill("solid", fgColor="D9E1F2")
 
@@ -2365,6 +2398,50 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         cell.font = header_font
         cell.alignment = header_align
         cell.fill = header_fill
+
+    # Make all data rows taller too (spruced)
+    try:
+        for r in range(3, ws.max_row + 1):
+            ws.row_dimensions[r].height = 45
+    except Exception:
+        pass
+
+    # Visually separate groups: GB | FB | Baserunning
+    try:
+        from openpyxl.styles import Border, Side
+        thick_side = Side(style="thick")
+
+        _cols = list(df_xl.columns)
+        gb_idxs = [i + 1 for i, c in enumerate(_cols) if (c == "GB" or str(c).startswith("GB-"))]
+        fb_idxs = [i + 1 for i, c in enumerate(_cols) if (c == "FB" or str(c).startswith("FB-"))]
+        run_idxs = [i + 1 for i, c in enumerate(_cols) if c in RUN_KEYS]
+
+        gb_last = max(gb_idxs) if gb_idxs else None
+        fb_last = max(fb_idxs) if fb_idxs else None
+
+        def _add_right_thick(col_idx: int):
+            if not col_idx:
+                return
+            for r in range(3, ws.max_row + 1):
+                cell = ws.cell(row=r, column=col_idx)
+                cur = cell.border
+                cell.border = Border(
+                    left=cur.left,
+                    right=thick_side,
+                    top=cur.top,
+                    bottom=cur.bottom,
+                    diagonal=cur.diagonal,
+                    diagonal_direction=cur.diagonal_direction,
+                    outline=cur.outline,
+                    vertical=cur.vertical,
+                    horizontal=cur.horizontal,
+                )
+
+        # Put a thick divider after the last GB column and last FB column
+        _add_right_thick(gb_last)
+        _add_right_thick(fb_last)
+    except Exception:
+        pass
 
     for col_idx, col_name in enumerate(df_xl.columns, start=1):
         col_letter = get_column_letter(col_idx)
@@ -2422,7 +2499,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     try:
         player_col_idx = list(df_xl.columns).index("Player") + 1
         for r in range(4, ws.max_row + 1):
-            ws.cell(row=r, column=player_col_idx).font = Font(bold=True)
+            ws.cell(row=r, column=player_col_idx).font = Font(bold=True, size=14)
     except Exception:
         pass
 
@@ -2507,7 +2584,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
