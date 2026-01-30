@@ -348,12 +348,10 @@ os.makedirs(TEAM_SEASON_DIR, exist_ok=True)
 # -----------------------------
 # ENGINE CONSTANTS (MUST EXIST BEFORE empty_stat_dict/db_load)
 # -----------------------------
-POSITION_KEYS = ["P","C","1B","2B","3B","SS","LF","CF","RF"]
-# Track GB/FB to each position (no spray chart grid buckets)
-LOCATION_KEYS = ([f"GB-{p}" for p in POSITION_KEYS] + [f"FB-{p}" for p in POSITION_KEYS])
+LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "Bunt", "Sac Bunt", "UNKNOWN"]
 BALLTYPE_KEYS = ["GB", "FB"]
-COMBO_LOCS = []
-COMBO_KEYS = []
+COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
+COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
 # Running event tracking (NOT balls in play)
 RUN_KEYS = [
@@ -529,6 +527,29 @@ CS_ACTION_REGEX = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
+DI_REGEX_1 = re.compile(
+    r"""
+    \bdefensive\s+indifference\b
+    .*?
+    \b(?:to|advances?\s+to|takes)\b
+    (?:\s+base)?
+    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+DI_REGEX_2 = re.compile(
+    r"""
+    \b(?:to|advances?\s+to|takes)\b
+    (?:\s+base)?
+    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
+    .*?
+    \bdefensive\s+indifference\b
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+DI_REGEX_BARE = re.compile(r"\bdefensive\s+indifference\b", re.IGNORECASE)
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
 
@@ -649,6 +670,16 @@ def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str
         runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
         return runner, "CS", base_key
 
+    m = DI_REGEX_1.search(clean_line) or DI_REGEX_2.search(clean_line)
+    if m:
+        base_key = normalize_base_bucket("DI", m.group(1) if (m.lastindex or 0) >= 1 else None)
+        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
+        return runner, "DI", base_key
+
+    if DI_REGEX_BARE.search(clean_line):
+        runner = extract_runner_name_fallback(clean_line, roster)
+        return runner, "DI", "DI"
+
     return None, None, None
 
 
@@ -722,65 +753,6 @@ def classify_ball_type(line_lower: str):
             return "FB", 2, [f"Matched FB regex: {rx.pattern}"]
 
     return None, 0, []
-
-def infer_ball_type_from_fielder_words(line_lower: str) -> Optional[str]:
-    """Infer GB/FB from fielder words without recording a position."""
-    ll = (line_lower or "").lower()
-    infield_markers = [
-        "shortstop", "second baseman", "third baseman", "first baseman",
-        "to pitcher", "back to the mound", "pitcher",
-        "to shortstop", "to second baseman", "to third baseman", "to first baseman",
-    ]
-    outfield_markers = [
-        "left fielder", "center fielder", "right fielder",
-        "to left field", "to center field", "to right field",
-        "left-center", "right-center",
-    ]
-    if any(m in ll for m in outfield_markers):
-        return "FB"
-    if any(m in ll for m in infield_markers):
-        return "GB"
-    return None
-
-
-
-def classify_position_from_line(line_lower: str) -> Optional[str]:
-    """
-    Best-effort fielder/position inference from a GC play-by-play line.
-
-    Returns one of: P, C, 1B, 2B, 3B, SS, LF, CF, RF
-    """
-    ll = (line_lower or "").lower()
-
-    # Map patterns to positions; we pick the earliest match in the string.
-    patterns = [
-        (r"\bcatcher\b", "C"),
-        (r"\bto catcher\b", "C"),
-        (r"\bpitcher\b|\bto pitcher\b|back to the mound", "P"),
-        (r"\bfirst baseman\b|\bto first baseman\b", "1B"),
-        (r"\bsecond baseman\b|\bto second baseman\b", "2B"),
-        (r"\bthird baseman\b|\bto third baseman\b", "3B"),
-        (r"\bshortstop\b|\bto shortstop\b", "SS"),
-        (r"\bleft fielder\b|\bto left field\b", "LF"),
-        (r"\bcenter fielder\b|\bto center field\b", "CF"),
-        (r"\bright fielder\b|\bto right field\b", "RF"),
-        (r"left-center", "CF"),
-        (r"right-center", "CF"),
-    ]
-
-    best_pos = None
-    best_idx = None
-    for rx, pos in patterns:
-        m = re.search(rx, ll)
-        if not m:
-            continue
-        idx = m.start()
-        if best_idx is None or idx < best_idx:
-            best_idx = idx
-            best_pos = pos
-
-    return best_pos
-
 
 
 def classify_location(line_lower: str, strict_mode: bool = False):
@@ -1580,7 +1552,7 @@ else:
     selected_row = next((t for t in teams if t.get("team_name") == selected_team), teams[0])
     team_key = selected_row.get("team_key") or safe_team_key(selected_team)
 
-with st.expander("➕ Add a new team"):
+with st.expander("➕ Add a new team (stored in Supabase)"):
     new_team_name = st.text_input("New team name:")
     if st.button("Create Team"):
         if not new_team_name.strip():
@@ -1696,6 +1668,92 @@ with col_reset:
         )
 
         st.rerun()
+
+
+# -----------------------------
+# ✅ COACH-PROOF BACKUP / RESTORE (SUPABASE)
+# -----------------------------
+with st.expander("🛟 Backup / Restore (Coach-Proof) — Download + Upload Season Totals"):
+    raw_payload = {
+        "meta": {"games_played": games_played},
+        "team": season_team,
+        "players": season_players,
+        "archived_players": sorted(list(archived_players or set())),
+    }
+
+    backup_bytes = json.dumps(raw_payload, indent=2).encode("utf-8")
+    safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
+
+    st.download_button(
+        label="⬇️ Download Season Totals JSON (backup)",
+        data=backup_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_season_totals_backup.json",
+        mime="application/json",
+    )
+
+    st.markdown("**Restore from a backup JSON:** (This overwrites the current season totals for this selected team.)")
+
+    uploaded = st.file_uploader(
+        "Upload backup JSON",
+        type=["json"],
+        accept_multiple_files=False,
+        help="Choose a season_totals_backup.json file you downloaded earlier.",
+    )
+
+    do_restore = st.button("♻️ Restore Backup NOW")
+    if do_restore:
+        if uploaded is None:
+            st.error("Upload a backup JSON first.")
+            st.stop()
+
+        try:
+            incoming = json.load(uploaded)
+            if not isinstance(incoming, dict):
+                raise ValueError("Backup JSON is not an object.")
+
+            incoming_team = incoming.get("team", {})
+            incoming_players = incoming.get("players", {})
+            incoming_meta = incoming.get("meta", {})
+            incoming_archived = incoming.get("archived_players", [])
+
+            if not isinstance(incoming_team, dict) or not isinstance(incoming_players, dict) or not isinstance(incoming_meta, dict):
+                raise ValueError("Backup JSON is missing required sections: meta/team/players.")
+
+            incoming_team = ensure_all_keys(incoming_team)
+            fixed_players = {}
+            for p, sd in incoming_players.items():
+                fixed_players[p] = ensure_all_keys(sd) if isinstance(sd, dict) else empty_stat_dict()
+
+            for p in current_roster:
+                if p not in fixed_players:
+                    fixed_players[p] = empty_stat_dict()
+
+            restored_games_played = int(incoming_meta.get("games_played", 0) or 0)
+
+            # Archived players set
+            restored_archived = set()
+            if isinstance(incoming_archived, list):
+                restored_archived = {str(x).strip().strip('"') for x in incoming_archived if str(x).strip()}
+
+            legacy_processed = incoming_team.get("_processed_game_keys", [])
+            legacy_hashes = []
+            if isinstance(legacy_processed, list):
+                legacy_hashes = [str(x) for x in legacy_processed if x]
+                restored_games_played = len(set(legacy_hashes))
+
+            db_reset_season(TEAM_CODE_SAFE, team_key)
+            db_save_season_totals(TEAM_CODE_SAFE, team_key, incoming_team, fixed_players, restored_games_played, restored_archived)
+
+            if legacy_hashes:
+                for h in set(legacy_hashes):
+                    db_try_mark_game_processed(TEAM_CODE_SAFE, team_key, h)
+
+            st.success("✅ Restore complete (Supabase). Reloading…")
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Restore failed: {e}")
+
 
 # -----------------------------
 # PLAY-BY-PLAY INPUT
@@ -1827,36 +1885,40 @@ if process_clicked:
             if not is_ball_in_play(line_lower):
                 continue
 
-            # Count BIP as GB/FB totals + GB/FB by position (P/C/1B/2B/3B/SS/LF/CF/RF)
+            loc, loc_conf, loc_reasons = classify_location(line_lower, strict_mode=strict_mode)
             ball_type, bt_conf, bt_reasons = classify_ball_type(line_lower)
 
-            # Infer fielder position from words in the line
-            pos = classify_position_from_line(line_lower)
+            if loc is None:
+                if strict_mode:
+                    continue
+                loc = "UNKNOWN"
+                loc_reasons.append("No location match → bucketed as UNKNOWN")
 
-            # If regex didn't catch GB/FB, infer from fielder words
-            if ball_type is None:
-                ball_type = infer_ball_type_from_fielder_words(line_lower)
-
-            if ball_type is None:
-                # can't classify GB/FB — skip
-                continue
+            if ball_type is None and loc is not None:
+                if loc in ["SS", "3B", "2B", "1B", "P", "Bunt", "Sac Bunt"]:
+                    ball_type = "GB"
+                    bt_conf += 1
+                    bt_reasons.append("No explicit GB phrase → inferred GB from infield location")
+                elif loc in ["LF", "CF", "RF"]:
+                    ball_type = "FB"
+                    bt_conf += 1
+                    bt_reasons.append("No explicit FB phrase → inferred FB from outfield location")
 
             # (confidence labels kept for future debug; not displayed)
-            _ = overall_confidence_score(bt_conf)
-            _ = bt_reasons
+            _ = overall_confidence_score(loc_conf + bt_conf)
+            _ = loc_reasons + bt_reasons
+
+            game_team[loc] += 1
+            game_players[batter][loc] += 1
 
             if ball_type in BALLTYPE_KEYS:
-                # Totals
                 game_team[ball_type] += 1
                 game_players[batter][ball_type] += 1
 
-                # Position buckets (only if we can confidently infer a position)
-                if pos:
-                    k = f"{ball_type}-{pos}"
-                    if k in game_team:
-                        game_team[k] += 1
-                    if k in game_players[batter]:
-                        game_players[batter][k] += 1
+            if ball_type in ["GB", "FB"] and loc in COMBO_LOCS:
+                combo_key = f"{ball_type}-{loc}"
+                game_team[combo_key] += 1
+                game_players[batter][combo_key] += 1
 
         add_game_to_season(season_team, season_players, game_team, game_players)
 
@@ -1888,13 +1950,18 @@ if process_clicked:
 # -----------------------------
 # SEASON OUTPUTS
 # -----------------------------
-st.subheader(f"📔 Full Team Spray - ({selected_team})")
-
-row_left, row_right = st.columns([8, 2])
-with row_left:
-    show_archived = st.checkbox("Show archived players (not on current roster)", value=False)
-with row_right:
+# Tight, one-line header directly above the table (reduces vertical dead space)
+hdr_left, hdr_mid, hdr_right = st.columns([6, 2, 2], vertical_alignment="center")
+with hdr_left:
+    st.markdown(
+        f"""<h3 style='margin:0; padding:0;'>📔 Full Team Spray – SEASON TO DATE ({selected_team})</h3>""",
+        unsafe_allow_html=True,
+    )
+with hdr_mid:
+    show_archived = st.checkbox("Show archived players", value=False)
+with hdr_right:
     stat_edit_slot = st.empty()  # filled after df_season is built
+
 season_rows = []
 
 active_players = sorted([p for p in current_roster if p in season_players])
@@ -2129,49 +2196,9 @@ visible_cols = [c for c in _vc if c in df_season.columns]
 if "Player" in df_season.columns and "Player" not in visible_cols:
     visible_cols = ["Player"] + visible_cols
 
-# --- Export column order: keep things grouped for readability ---
-# We keep whatever the user selected via Stat Edit, but we re-order
-# within the export so GB stats are together, FB stats are together,
-# and baserunning stats are together.
-def _grouped_export_cols(cols: list) -> list:
-    cols = list(cols)
-    if not cols:
-        return cols
-
-    # Always keep Player first if present
-    player = ["Player"] if "Player" in cols else []
-    remaining = [c for c in cols if c != "Player"]
-
-    # Identify groups
-    gb_cols = [c for c in remaining if (c == "GB" or str(c).startswith("GB-"))]
-    fb_cols = [c for c in remaining if (c == "FB" or str(c).startswith("FB-"))]
-    run_cols = [c for c in remaining if c in RUN_KEYS]
-
-    # Everything else keeps its relative order
-    used = set(gb_cols) | set(fb_cols) | set(run_cols)
-    other_cols = [c for c in remaining if c not in used]
-
-    # Order: other (spray/location/combo/etc), then GB, then FB, then baserunning
-    return player + other_cols + gb_cols + fb_cols + run_cols
-
-# Re-order for export readability (GB grouped, FB grouped, baserunning grouped)
-visible_cols = _grouped_export_cols(visible_cols)
-
-# Re-order for export readability (GB grouped, FB grouped, baserunning grouped)
-visible_cols = _grouped_export_cols(visible_cols)
-
-
 if len(visible_cols) == 0:
     visible_cols = list(df_season.columns)
-
-# -----------------------------
-# TABLE VIEW (match export look)
-# -----------------------------
-df_view = df_season[visible_cols] if visible_cols else df_season
-
-# Keep one sheet on-screen, but order columns to mirror the exported report:
-# SPRAY columns first, then GB block, then FB block, then baserunning block.
-st.dataframe(df_view, use_container_width=True, hide_index=True)
+st.dataframe(df_show, use_container_width=True)
 
 # -----------------------------
 # 📝 COACHES SCOUTING NOTES (per selected opponent/team)
@@ -2234,23 +2261,6 @@ if notes_box_text:
 
     _csv_text = _csv_text.rstrip("\n") + "\n" + buf.getvalue().lstrip("\n")
 
-# Add a simple branding footer for CSV (formatting isn't possible in CSV)
-try:
-    import csv as _csv
-    import io as _io
-    cols = list(df_season.columns) if (df_season is not None and len(getattr(df_season, "columns", []))>0) else ["Player"]
-    blank_row = [""] * len(cols)
-    footer = [""] * len(cols)
-    footer[0] = "RP Spray Analytics"
-    buf = _io.StringIO()
-    w = _csv.writer(buf, lineterminator="\n")
-    for _ in range(3):
-        w.writerow(blank_row)
-    w.writerow(footer)
-    _csv_text = _csv_text.rstrip("\n") + "\n" + buf.getvalue().lstrip("\n")
-except Exception:
-    pass
-
 csv_bytes = _csv_text.encode("utf-8")
 safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
 
@@ -2277,94 +2287,25 @@ if no_season_data:
     # Fallback so the app doesn't crash — still allows the page to load.
     df_xl = df_season.copy() if df_season is not None else None
 else:
-    export_cols = _grouped_export_cols(visible_cols)
-    df_xl = df_season[export_cols].copy()
+    df_xl = df_season[visible_cols].copy()
 
 out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
-    df_xl.to_excel(writer, index=False, sheet_name=sheet_name, startrow=2)
+    df_xl.to_excel(writer, index=False, sheet_name=sheet_name)
 
     ws = writer.book[sheet_name]
-
-    # -----------------------------
-    # TEAM HEADER (Row 1) + Watermark
-    # -----------------------------
-    team_header = f"{selected_team}"
-    last_col = get_column_letter(ws.max_column if ws.max_column else 1)
-    ws.merge_cells(f"A1:{last_col}1")
-    hcell = ws["A1"]
-    hcell.value = team_header
-    hcell.font = Font(bold=True, size=24)
-    hcell.alignment = Alignment(horizontal="center", vertical="center")
-
-    # Row heights (spruced): make the sheet easy to read
-    # (Coach Notes box rows will override later.)
-    ws.row_dimensions[1].height = 45
-    ws.row_dimensions[2].height = 45
-
-    # Watermark for printing (header/footer)
-    try:
-        ws.oddHeader.center.text = '&KCCCCCC&"Calibri,Italic"&24RP Spray Analytics'
-    except Exception:
-        pass
-
-    # Freeze panes below the column headers (Row 3)
-    ws.freeze_panes = "A4"
+    ws.freeze_panes = "A2"
 
 
-    header_font = Font(bold=True, size=14)
+    header_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     header_fill = PatternFill("solid", fgColor="D9E1F2")
 
-    for cell in ws[3]:
+    for cell in ws[1]:
         cell.font = header_font
         cell.alignment = header_align
         cell.fill = header_fill
-
-    # Make all data rows taller too (spruced)
-    try:
-        for r in range(3, ws.max_row + 1):
-            ws.row_dimensions[r].height = 45
-    except Exception:
-        pass
-
-    # Visually separate groups: GB | FB | Baserunning
-    try:
-        from openpyxl.styles import Border, Side
-        thick_side = Side(style="thick")
-
-        _cols = list(df_xl.columns)
-        gb_idxs = [i + 1 for i, c in enumerate(_cols) if (c == "GB" or str(c).startswith("GB-"))]
-        fb_idxs = [i + 1 for i, c in enumerate(_cols) if (c == "FB" or str(c).startswith("FB-"))]
-        run_idxs = [i + 1 for i, c in enumerate(_cols) if c in RUN_KEYS]
-
-        gb_last = max(gb_idxs) if gb_idxs else None
-        fb_last = max(fb_idxs) if fb_idxs else None
-
-        def _add_right_thick(col_idx: int):
-            if not col_idx:
-                return
-            for r in range(3, ws.max_row + 1):
-                cell = ws.cell(row=r, column=col_idx)
-                cur = cell.border
-                cell.border = Border(
-                    left=cur.left,
-                    right=thick_side,
-                    top=cur.top,
-                    bottom=cur.bottom,
-                    diagonal=cur.diagonal,
-                    diagonal_direction=cur.diagonal_direction,
-                    outline=cur.outline,
-                    vertical=cur.vertical,
-                    horizontal=cur.horizontal,
-                )
-
-        # Put a thick divider after the last GB column and last FB column
-        _add_right_thick(gb_last)
-        _add_right_thick(fb_last)
-    except Exception:
-        pass
 
     for col_idx, col_name in enumerate(df_xl.columns, start=1):
         col_letter = get_column_letter(col_idx)
@@ -2374,7 +2315,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             max_len = max(max_len, len(v))
         ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 22)
 
-    start_row = 4
+    start_row = 2
     start_col = 2  # numeric starts after Player
     end_row = ws.max_row
     end_col = ws.max_column
@@ -2413,19 +2354,10 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
     # center numbers
     num_align = Alignment(horizontal="center", vertical="center")
-    for row in ws.iter_rows(min_row=4, max_row=ws.max_row):
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
         for cell in row:
             if isinstance(cell.value, (int, float)):
                 cell.alignment = num_align
-
-    # Bold player names (Player column)
-    try:
-        player_col_idx = list(df_xl.columns).index("Player") + 1
-        for r in range(4, ws.max_row + 1):
-            ws.cell(row=r, column=player_col_idx).font = Font(bold=True, size=14)
-    except Exception:
-        pass
-
 
     # -----------------------------
     # COACH NOTES BOX (EXCEL)
@@ -2484,6 +2416,399 @@ with col_dl2:
         mime="text/csv",
     )
 
+st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
+
+# ✅ Individual archived toggle (separate from season table)
+indiv_show_archived = st.checkbox(
+    "Show archived players (not on current roster) — Individual",
+    value=False,
+    key=f"indiv_show_archived__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}",
+)
+
+# ✅ Candidate list for individual picker (include 0-stat players)
+if indiv_show_archived:
+    indiv_candidates = sorted(set(active_players + archived_list))
+else:
+    indiv_candidates = list(active_players)
+
+selectable_players = list(indiv_candidates)
+
+# -----------------------------
+# INDIV STAT LIST + STAT EDIT
+# -----------------------------
+INDIV_TYPES = []
+INDIV_TYPES += list(LOCATION_KEYS)
+INDIV_TYPES += ["GB (total)", "FB (total)"]
+INDIV_TYPES += list(COMBO_KEYS)
+
+# running events (include SB/CS/DI + base-specific run keys)
+INDIV_TYPES += ["SB", "CS", "DI"]
+for _rk in RUN_KEYS:
+    if _rk not in INDIV_TYPES:
+        INDIV_TYPES.append(_rk)
+
+# de-dupe while preserving order
+_seen = set()
+INDIV_TYPES = [x for x in INDIV_TYPES if not (x in _seen or _seen.add(x))]
+
+indiv_key = f"indiv_types__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}"
+if indiv_key not in st.session_state:
+    st.session_state[indiv_key] = list(INDIV_TYPES)
+
+if not selectable_players:
+    st.info("No hitters found for this roster yet.")
+else:
+    # Tight row: hitter select (left) + Stat Edit (right)
+    i_left, i_right = st.columns([8, 2])
+    with i_left:
+        selected_player = st.selectbox("Choose a hitter:", selectable_players, key=f"indiv_player__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}")
+
+    with i_right:
+        if hasattr(st, "popover"):
+            _stat_edit_container = st.popover("Stat Edit")
+        else:
+            _stat_edit_container = st.expander("Stat Edit", expanded=False)
+
+        with _stat_edit_container:
+            st.caption("Toggle which stats show in the individual table + downloads")
+            flt = st.text_input("Search", value="", placeholder="Type to filter stats...", key=f"{indiv_key}__flt")
+
+            b1, b2, b3 = st.columns([1, 1, 2])
+            with b1:
+                all_clicked = st.button("All", key=f"{indiv_key}__all", use_container_width=True)
+            with b2:
+                none_clicked = st.button("None", key=f"{indiv_key}__none", use_container_width=True)
+            with b3:
+                st.caption(" ")
+
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
+            if all_clicked or none_clicked:
+                for _t in INDIV_TYPES:
+                    _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_t))
+                    st.session_state[f"{indiv_key}__cb__{_safe}"] = True if all_clicked else False
+                st.session_state[indiv_key] = list(INDIV_TYPES) if all_clicked else []
+                st.rerun()
+
+            picked_set = set(st.session_state.get(indiv_key, []))
+
+            view_types = INDIV_TYPES
+            if flt.strip():
+                q = flt.strip().lower()
+                view_types = [t for t in INDIV_TYPES if q in str(t).lower()]
+
+            colA, colB, colC = st.columns(3)
+            grid = [colA, colB, colC]
+            for i, t in enumerate(view_types):
+                target = grid[i % 3]
+                safe_t = re.sub(r"[^A-Za-z0-9_]+", "_", str(t))
+                cur_val = st.session_state.get(f"{indiv_key}__cb__{safe_t}", t in picked_set)
+                new_val = target.checkbox(str(t), value=cur_val, key=f"{indiv_key}__cb__{safe_t}")
+                if new_val:
+                    picked_set.add(t)
+                else:
+                    picked_set.discard(t)
+
+            st.session_state[indiv_key] = [t for t in INDIV_TYPES if t in picked_set]
+
+    # Current individual view types
+    indiv_types_selected = st.session_state.get(indiv_key, list(INDIV_TYPES))
+    if not indiv_types_selected:
+        st.warning("No stats selected. Use Stat Edit to choose at least one stat.")
+        indiv_types_selected = list(INDIV_TYPES)
+
+    # -----------------------------
+    # DISPLAY (selected player)
+    # -----------------------------
+    stats = season_players[selected_player]
+    indiv_rows = []
+    for t in indiv_types_selected:
+        if t == "GB (total)":
+            indiv_rows.append({"Type": t, "Count": stats.get("GB", 0)})
+        elif t == "FB (total)":
+            indiv_rows.append({"Type": t, "Count": stats.get("FB", 0)})
+        else:
+            indiv_rows.append({"Type": t, "Count": stats.get(t, 0)})
+
+    st.table(indiv_rows)
+
+    # -----------------------------
+    # DOWNLOADS (match Stat Edit)
+    #   - Excel: one sheet per player
+    #   - CSV: long format (Player, Type, Count)
+    # -----------------------------
+    dl_a, dl_b = st.columns([1, 1])
+    safe_team_ind = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
+
+    def _sheet_name(name: str) -> str:
+        # Excel sheet name max = 31, cannot contain : \ / ? * [ ]
+        s = re.sub(r"[:\\/\?\*\[\]]+", " ", str(name)).strip()
+        s = re.sub(r"\s+", " ", s)
+        return s[:31] if s else "Player"
+
+    # Excel bytes (one sheet per player)
+    excel_out = BytesIO()
+    with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
+        # Load per-player notes (stored as JSON string in session_state / DB meta)
+        _pn_key = f"player_notes__{TEAM_CODE_SAFE}__{team_key}"
+        try:
+            _player_notes_dict = json.loads(st.session_state.get(_pn_key, "") or "{}")
+            if not isinstance(_player_notes_dict, dict):
+                _player_notes_dict = {}
+        except Exception:
+            _player_notes_dict = {}
+        used = set()
+
+        # Safety: openpyxl requires at least one visible sheet
+        if not selectable_players:
+            pd.DataFrame().to_excel(writer, index=False, sheet_name="Player")
+            ws = writer.book["Player"]
+            ws["A1"].value = "No players available for Individual Spray export."
+            used.add("Player")
+        for p in selectable_players:
+            st_p = season_players.get(p, {})
+            sn = _sheet_name(p)
+
+            base = sn
+            k = 1
+            while sn in used:
+                suffix = f"_{k}"
+                sn = (base[:31 - len(suffix)] + suffix) if len(base) + len(suffix) > 31 else (base + suffix)
+                k += 1
+            used.add(sn)
+
+            # Create an empty sheet (we write cells manually for a clean, MLB-style layout)
+            pd.DataFrame().to_excel(writer, index=False, sheet_name=sn)
+            ws = writer.book[sn]
+            # Local styles for notes + stat split (avoid NameError due to ordering)
+            FONT_NAME = "Arial"  # Excel-safe font
+            _thin = Side(style="thin", color="9E9E9E")
+            _border = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+            _notes_fill = PatternFill("solid", fgColor="D9EAD3")  # light green
+            _header_fill = PatternFill("solid", fgColor="D9E1F2")  # light blue-gray
+            _header_font = Font(name=FONT_NAME, size=12, bold=True)
+            _small_font = Font(name=FONT_NAME, size=11)
+
+            # Coaches Notes (per player) — printable, saved into Excel
+            # Header row
+            ws.merge_cells("A3:B3")
+            ws["A3"].value = "Coaches Notes"
+            for c in range(1, 3):
+                cell = ws.cell(row=3, column=c)
+                cell.font = _header_font
+                cell.fill = _header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = _border
+
+            player_note_text = _player_notes_dict.get(p, "")
+            # Body (editable note text)
+            ws.merge_cells("A4:B10")
+            ws["A4"].value = player_note_text or ""
+            for r in range(4, 11):
+                for c in range(1, 3):
+                    cell = ws.cell(row=r, column=c)
+                    cell.font = _small_font
+                    cell.fill = PatternFill("solid", fgColor="FFFFFF")
+                    cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                    cell.border = _border
+            ws["A2"].value = "GB / FB by position"
+            ws["A2"].font = _header_font
+            ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
+
+                        # (Removed) Selected Stat Totals split-table — replaced below with SB/CS + coach worksheet block
+
+            FIELD_TOP_ROW = 2
+            FIELD_LEFT_COL = 3   # Column C
+            FIELD_RIGHT_COL = 12 # Column L
+            FIELD_BOTTOM_ROW = 11
+
+            # Colors / styles
+            title_font = Font(name=FONT_NAME, size=16, bold=True)
+            hdr_font = Font(name=FONT_NAME, size=11, bold=True)
+            cell_font = Font(name=FONT_NAME, size=11, bold=False)
+            small_font = Font(name=FONT_NAME, size=10, color='444444')
+            gbfb_font = Font(name=FONT_NAME, size=11, bold=True)
+            gray_fill = PatternFill("solid", fgColor="F2F2F2")
+            grass_fill = PatternFill("solid", fgColor="D9EAD3")  # lighter green
+            white_fill = PatternFill("solid", fgColor="FFFFFF")
+            thin = Side(style="thin", color="9E9E9E")
+            box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            # Title row
+            ws.merge_cells(start_row=1, start_column=3, end_row=1, end_column=12)
+            ws.cell(row=1, column=3, value=f"Individual Spray Summary — {p}").font = title_font
+            ws.cell(row=1, column=3).alignment = Alignment(horizontal="center", vertical="center")
+
+            # Section label
+            ws.cell(row=2, column=1, value="GB / FB by position").font = hdr_font
+            ws.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
+
+            # Field background
+            for r in range(FIELD_TOP_ROW, FIELD_BOTTOM_ROW + 1):
+                for c in range(FIELD_LEFT_COL, FIELD_RIGHT_COL + 1):
+                    cell = ws.cell(row=r, column=c)
+                    cell.fill = grass_fill
+                    # keep background clean (no borders on grass)
+                    cell.border = Border()
+
+            # Column widths tuned for PORTRAIT 1-page print (clean + "MLB" look)
+            ws.column_dimensions[get_column_letter(col_atbat)].width = 6.0
+            for _c in range(col_result_start, col_result_end+1):
+                ws.column_dimensions[get_column_letter(_c)].width = 11.0
+            for _c in range(col_grid_start, col_grid_end+1):
+                ws.column_dimensions[get_column_letter(_c)].width = 2.0
+            ws.column_dimensions[get_column_letter(col_count)].width = 7.0
+            for _c in range(col_notes_start, col_notes_end+1):
+                ws.column_dimensions[get_column_letter(_c)].width = 13.0
+
+
+            thick = Side(style="medium", color="000000")
+            thin_black = Side(style="thin", color="000000")
+
+            # Clear any leftover content in the AB-table area (prevents old stat lists from showing)
+            for rr in range(start_row, start_row + 40):
+                for cc in range(col_atbat, col_notes_end + 1):
+                    ws.cell(rr, cc, "")
+                    ws.cell(rr, cc).border = Border()
+                    ws.cell(rr, cc).fill = PatternFill(fill_type=None)
+
+            def _set_border_range(r1, c1, r2, c2):
+                for rr in range(r1, r2+1):
+                    for cc in range(c1, c2+1):
+                        left = thick if cc == c1 else thin_black
+                        right = thick if cc == c2 else thin_black
+                        top = thick if rr == r1 else thin_black
+                        bottom = thick if rr == r2 else thin_black
+                        ws.cell(rr, cc).border = Border(left=left, right=right, top=top, bottom=bottom)
+
+            hdr_r = start_row
+            ws.cell(hdr_r, col_atbat, "AT BAT #").font = _header_font2
+            ws.cell(hdr_r, col_atbat).alignment = _header_align2
+
+            ws.merge_cells(start_row=hdr_r, start_column=col_result_start, end_row=hdr_r, end_column=col_result_end)
+            ws.cell(hdr_r, col_result_start, "RESULT").font = _header_font2
+            ws.cell(hdr_r, col_result_start).alignment = _header_align2
+
+            ws.merge_cells(start_row=hdr_r, start_column=col_grid_start, end_row=hdr_r, end_column=col_grid_end)
+            ws.cell(hdr_r, col_grid_start, "PITCH PROGRESSION").font = _header_font2
+            ws.cell(hdr_r, col_grid_start).alignment = _header_align2
+
+            ws.cell(hdr_r, col_count, "COUNT").font = _header_font2
+            ws.cell(hdr_r, col_count).alignment = _header_align2
+
+            ws.merge_cells(start_row=hdr_r, start_column=col_notes_start, end_row=hdr_r, end_column=col_notes_end)
+            ws.cell(hdr_r, col_notes_start, "NOTES").font = _header_font2
+            ws.cell(hdr_r, col_notes_start).alignment = _header_align2
+
+            _set_border_range(hdr_r, col_atbat, hdr_r, col_notes_end)
+            ws.row_dimensions[hdr_r].height = 22
+
+            block_h = 2  # pitch progression grid only 2 rows tall
+            first_data_row = hdr_r + 1
+            for i_ab in range(1, 13):
+                r1 = first_data_row + (i_ab-1)*block_h
+                r2 = r1 + block_h - 1
+                for rr in range(r1, r2+1):
+                    ws.row_dimensions[rr].height = 18
+
+                ws.merge_cells(start_row=r1, start_column=col_atbat, end_row=r2, end_column=col_atbat)
+                ws.cell(r1, col_atbat, f"#{i_ab}").alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(r1, col_atbat).font = Font(name=FONT_NAME, size=11)
+
+                ws.merge_cells(start_row=r1, start_column=col_result_start, end_row=r2, end_column=col_result_end)
+                ws.merge_cells(start_row=r1, start_column=col_count, end_row=r2, end_column=col_count)
+                ws.merge_cells(start_row=r1, start_column=col_notes_start, end_row=r2, end_column=col_notes_end)
+
+                # grid squares (no merges)
+                for rr in range(r1, r2+1):
+                    for cc in range(col_grid_start, col_grid_end+1):
+                        ws.cell(rr, cc).alignment = Alignment(horizontal="center", vertical="center")
+
+                _set_border_range(r1, col_atbat, r2, col_notes_end)
+
+                # strengthen internal separators
+                for rr in range(r1, r2+1):
+                    ws.cell(rr, col_result_start).border = ws.cell(rr, col_result_start).border.copy(left=thick)
+                    ws.cell(rr, col_result_end).border = ws.cell(rr, col_result_end).border.copy(right=thick)
+                    ws.cell(rr, col_grid_start).border = ws.cell(rr, col_grid_start).border.copy(left=thick)
+                    ws.cell(rr, col_grid_end).border = ws.cell(rr, col_grid_end).border.copy(right=thick)
+                    ws.cell(rr, col_count).border = ws.cell(rr, col_count).border.copy(left=thick, right=thick)
+                    ws.cell(rr, col_notes_start).border = ws.cell(rr, col_notes_start).border.copy(left=thick)
+                    ws.cell(rr, col_notes_end).border = ws.cell(rr, col_notes_end).border.copy(right=thick)
+
+            # (Removed) Extra Notes & General Information block to keep 1-page print clean
+
+            # Print setup per sheet: force one-page fit (like your highlighted area)
+            ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 1
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            # Tight print area + margins for 1-page per player
+            ws.print_options.horizontalCentered = True
+            ws.print_options.verticalCentered = False
+            ws.page_margins.left = 0.25
+            ws.page_margins.right = 0.25
+            ws.page_margins.top = 0.30
+            ws.page_margins.bottom = 0.30
+            ws.page_margins.header = 0.10
+            ws.page_margins.footer = 0.10
+            ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
+            end_row = hdr_r + (12 * block_h)
+            ws.print_area = f"A1:{get_column_letter(col_notes_end)}{end_row}"
+
+
+        # Ensure at least one visible worksheet (prevents openpyxl IndexError)
+        try:
+            if getattr(writer, "book", None) is not None:
+                if len(writer.book.worksheets) == 0:
+                    writer.book.create_sheet("Player")
+                for _ws in writer.book.worksheets:
+                    _ws.sheet_state = "visible"
+                writer.book.active = 0
+        except Exception:
+            pass
+
+    # Finish Excel bytes after writing all player sheets
+    excel_bytes = excel_out.getvalue()
+
+    # CSV bytes (long format)
+    long_rows = []
+    for p in selectable_players:
+        st_p = season_players.get(p, {})
+        for t in indiv_types_selected:
+            if t == "GB (total)":
+                cnt = st_p.get("GB", 0)
+            elif t == "FB (total)":
+                cnt = st_p.get("FB", 0)
+            else:
+                cnt = st_p.get(t, 0)
+            long_rows.append({"Player": p, "Type": t, "Count": cnt})
+
+    df_long = pd.DataFrame(long_rows)
+    csv_long_bytes = df_long.to_csv(index=False).encode("utf-8")
+
+# Render the download buttons exactly once per app run (prevents accidental duplicates if this block
+    # gets executed inside a loop or repeated container).
+    if st.session_state.get("_indiv_dl_guard_nonce") != _RP_RUN_NONCE:
+        st.session_state["_indiv_dl_guard_nonce"] = _RP_RUN_NONCE
+
+        with dl_a:
+            st.download_button(
+                label="📥 Download Individual Spray (Excel - sheets per player)",
+                key=f"dl_indiv_excel_{TEAM_CODE_SAFE}_{team_key}_{_RP_RUN_NONCE}",
+                data=excel_bytes,
+                file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        with dl_b:
+            st.download_button(
+                label="📄 Download Individual Spray (CSV)",
+                key=f"dl_indiv_csv_{TEAM_CODE_SAFE}_{team_key}_{_RP_RUN_NONCE}",
+                data=csv_long_bytes,
+                file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.csv",
+                mime="text/csv",
+            )
+
 # -----------------------------
 # FOOTER (Copyright)
 # -----------------------------
@@ -2507,8 +2832,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
 
 
 
