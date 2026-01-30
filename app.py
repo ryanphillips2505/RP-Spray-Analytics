@@ -2532,140 +2532,140 @@ else:
             df_p.to_excel(writer, index=False, sheet_name=sn, startrow=12)
             ws = writer.book[sn]
             ws.freeze_panes = "A14"
+            _totals = st_p  # per-player season totals dict (includes GB-*/FB-* buckets)
+
+            
 
             # --- MLB-style field summary (GB/FB by position) ---
-            ws.sheet_view.showGridLines = False
+            from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 
-            from openpyxl.styles import Border, Side, PatternFill
-            thin = Side(style="thin", color="9CA3AF")
-            box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            FONT_NAME = "Arial"
+            title_font = Font(name=FONT_NAME, size=14, bold=True)
+            header_font = Font(name=FONT_NAME, size=11, bold=True, color="111827")
+            small_font = Font(name=FONT_NAME, size=11)
 
-            title_font = Font(bold=True, size=16)
-            small_font = Font(bold=True, size=11)
+            # Field colors (NO brown)
+            grass_fill = PatternFill("solid", fgColor="A9D18E")      # light green
+            grass_patch = PatternFill("solid", fgColor="C6E0B4")     # lighter green patch
+            box_fill = PatternFill("solid", fgColor="D9D9D9")        # light grey
+            white_fill = PatternFill("solid", fgColor="FFFFFF")
 
-            # Title
-            ws.merge_cells("A1:I1")
-            ws["A1"] = f"Individual Spray Summary — {p}"
-            ws["A1"].font = title_font
-            ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+            thin = Side(style="thin", color="6B7280")
+            thick = Side(style="medium", color="111827")
+            thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-            ws["A2"] = "GB / FB by position"
-            ws["A2"].font = small_font
+            FIELD_TOP = 2
+            FIELD_LEFT_COL = 3   # C
+            FIELD_RIGHT_COL = 12 # L
+            FIELD_BOTTOM = 11
+
+            def col_letter(n: int) -> str:
+                from openpyxl.utils import get_column_letter
+                return get_column_letter(n)
+
+            # Title (C1:L1)
+            ws.merge_cells(start_row=1, start_column=FIELD_LEFT_COL, end_row=1, end_column=FIELD_RIGHT_COL)
+            t = ws.cell(row=1, column=FIELD_LEFT_COL, value=f"Individual Spray Summary — {p}")
+            t.font = title_font
+            t.alignment = Alignment(horizontal="center", vertical="center")
+
+            # Subtitle
+            ws["A2"].value = "GB / FB by position"
+            ws["A2"].font = header_font
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
-            # ---- Field layout (portrait, MLB-clean) ----
-            # Column widths tuned to fit 1-page portrait
-            for col_letter in list("ABCDEFGHI"):
-                ws.column_dimensions[col_letter].width = 11
-            ws.column_dimensions["A"].width = 18  # label column
-            ws.column_dimensions["B"].width = 6   # small left gutter
+            # Field background (C2:L11)
+            for r in range(FIELD_TOP, FIELD_BOTTOM + 1):
+                for c in range(FIELD_LEFT_COL, FIELD_RIGHT_COL + 1):
+                    cell = ws.cell(row=r, column=c)
+                    cell.fill = grass_fill
+                    cell.border = thin_border
 
-            def _hex_to_rgb(h):
-                h = h.strip("#")
-                return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+            # Lighter patch (top-left)
+            ws.cell(row=FIELD_TOP, column=FIELD_LEFT_COL).fill = grass_patch
 
-            def _rgb_to_hex(rgb):
-                return "%02X%02X%02X" % rgb
+            # Thicker border around field
+            for c in range(FIELD_LEFT_COL, FIELD_RIGHT_COL + 1):
+                ws.cell(row=FIELD_TOP, column=c).border = Border(left=ws.cell(row=FIELD_TOP, column=c).border.left,
+                                                                 right=ws.cell(row=FIELD_TOP, column=c).border.right,
+                                                                 top=thick,
+                                                                 bottom=ws.cell(row=FIELD_TOP, column=c).border.bottom)
+                ws.cell(row=FIELD_BOTTOM, column=c).border = Border(left=ws.cell(row=FIELD_BOTTOM, column=c).border.left,
+                                                                    right=ws.cell(row=FIELD_BOTTOM, column=c).border.right,
+                                                                    top=ws.cell(row=FIELD_BOTTOM, column=c).border.top,
+                                                                    bottom=thick)
+            for r in range(FIELD_TOP, FIELD_BOTTOM + 1):
+                ws.cell(row=r, column=FIELD_LEFT_COL).border = Border(left=thick,
+                                                                      right=ws.cell(row=r, column=FIELD_LEFT_COL).border.right,
+                                                                      top=ws.cell(row=r, column=FIELD_LEFT_COL).border.top,
+                                                                      bottom=ws.cell(row=r, column=FIELD_LEFT_COL).border.bottom)
+                ws.cell(row=r, column=FIELD_RIGHT_COL).border = Border(left=ws.cell(row=r, column=FIELD_RIGHT_COL).border.left,
+                                                                       right=thick,
+                                                                       top=ws.cell(row=r, column=FIELD_RIGHT_COL).border.top,
+                                                                       bottom=ws.cell(row=r, column=FIELD_RIGHT_COL).border.bottom)
 
-            # Match the Season heatmap palette (white -> light yellow -> light red)
-            _HEAT_START = "FFFFFF"
-            _HEAT_MID = "FFF2CC"
-            _HEAT_END = "F8CBAD"
+            # Heat fill helper (light -> darker green)
+            def _green_ramp(n: int, vmax: int) -> str:
+                t = 0.0 if vmax <= 0 else max(0.0, min(1.0, n / float(vmax)))
+                def lerp(a, b, t):
+                    return int(round(a + (b - a) * t))
+                a = (0xEA, 0xF4, 0xEA)  # very light green
+                b = (0x4F, 0x9D, 0x69)  # deeper green
+                rgb = (lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t))
+                return f"{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
 
-            def _heat_hex(v, vmax):
-                vmax = max(1, int(vmax))
-                v = max(0, int(v))
-                t = min(1.0, v / float(vmax))
-                if t <= 0.5:
-                    a = t / 0.5
-                    c1 = _hex_to_rgb(_HEAT_START)
-                    c2 = _hex_to_rgb(_HEAT_MID)
-                else:
-                    a = (t - 0.5) / 0.5
-                    c1 = _hex_to_rgb(_HEAT_MID)
-                    c2 = _hex_to_rgb(_HEAT_END)
-                rgb = tuple(int(round(c1[i] + (c2[i]-c1[i]) * a)) for i in range(3))
-                return _rgb_to_hex(rgb)
+            _vmax = max(
+                1,
+                max(
+                    [int(v) for k, v in _totals.items() if str(k).startswith(("GB-", "FB-"))] or [1]
+                ),
+            )
 
-            def _heat_fill(v, vmax):
-                return PatternFill("solid", fgColor=_heat_hex(v, vmax))
-
-            header_fill = PatternFill("solid", fgColor="F3F4F6")  # clean light gray
-
-            def _gbfb(pos_key):
-                gb = int(st_p.get(f"GB-{pos_key}", 0) or 0)
-                fb = int(st_p.get(f"FB-{pos_key}", 0) or 0)
-                return gb, fb
-
-            _pos_keys = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P"]
-            _gb_map = {k: _gbfb(k)[0] for k in _pos_keys}
-            _fb_map = {k: _gbfb(k)[1] for k in _pos_keys}
-            _vmax_gb = max(1, max(_gb_map.values()) if _gb_map else 1)
-            _vmax_fb = max(1, max(_fb_map.values()) if _fb_map else 1)
-
-            # -----------------------------
-            # BACKGROUND "FIELD" LOOK (grass + infield dirt)
-            # -----------------------------
-            grass_bg = PatternFill("solid", fgColor="E7F3E7")   # subtle grass green
-            dirt_bg  = PatternFill("solid", fgColor="F6E6D2")   # subtle infield dirt
-
-            # Grass behind the defensive alignment area (C2:I9)
-            for rr in range(2, 10):
-                for cc in range(3, 10):  # C..I
-                    ws.cell(row=rr, column=cc).fill = grass_bg
-
-            # Dirt behind the infield (E5:H8)
-            for rr in range(5, 9):
-                for cc in range(5, 9):  # E..H
-                    ws.cell(row=rr, column=cc).fill = dirt_bg
-
-            def _cell(r, c, value, fill, bold=False):
-                cell = ws.cell(row=r, column=c)
-                cell.value = value
-                cell.fill = fill
-                cell.border = box_border
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.font = Font(name="Calibri", size=12, bold=bold, color="111827")
-                return cell
-
-            def pos_box(pos, r, c):
-                """
-                2-row x 2-col box:
-                  row r: merged header (pos)
-                  row r+1: GB (left) + FB (right) with separate heat fills
-                c is the left column index (box spans c..c+1)
-                """
-                ws.merge_cells(start_row=r, start_column=c, end_row=r, end_column=c+1)
-                h = ws.cell(row=r, column=c)
-                h.value = pos
-                h.fill = header_fill
-                h.border = box_border
+            def pos_box(pos: str, header_row: int, left_col: int):
+                # header merged across 2 columns
+                ws.merge_cells(start_row=header_row, start_column=left_col, end_row=header_row, end_column=left_col + 1)
+                h = ws.cell(row=header_row, column=left_col, value=pos)
+                h.fill = box_fill
+                h.font = header_font
                 h.alignment = Alignment(horizontal="center", vertical="center")
-                h.font = Font(name="Calibri", size=12, bold=True, color="111827")
-                ws.cell(row=r, column=c+1).border = box_border
-                ws.cell(row=r, column=c+1).fill = header_fill
+                h.border = thin_border
+                ws.cell(row=header_row, column=left_col + 1).fill = box_fill
+                ws.cell(row=header_row, column=left_col + 1).border = thin_border
 
-                gb = _gb_map.get(pos, 0)
-                fb = _fb_map.get(pos, 0)
-                _cell(r+1, c,   f"GB {gb}", _heat_fill(gb, _vmax_gb))
-                _cell(r+1, c+1, f"FB {fb}", _heat_fill(fb, _vmax_fb))
+                gb_n = int(_totals.get(f"GB-{pos}", 0))
+                fb_n = int(_totals.get(f"FB-{pos}", 0))
 
-            # ---- Symmetric placement (C..I) ----
-            # Outfield
-            pos_box("CF", 2, 5)  # E-F
-            pos_box("LF", 3, 3)  # C-D
-            pos_box("RF", 3, 7)  # G-H
+                gb_cell = ws.cell(row=header_row + 1, column=left_col, value=f"GB {gb_n}")
+                fb_cell = ws.cell(row=header_row + 1, column=left_col + 1, value=f"FB {fb_n}")
 
-            # Infield
-            pos_box("3B", 5, 3)  # C-D
-            pos_box("SS", 5, 5)  # E-F
-            pos_box("2B", 5, 7)  # G-H
+                for cell in (gb_cell, fb_cell):
+                    cell.font = small_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = thin_border
 
-            # Bottom row
-            pos_box("P",  7, 5)  # E-F
-            pos_box("1B", 7, 8)  # H-I
+                gb_cell.fill = PatternFill("solid", fgColor=_green_ramp(gb_n, _vmax))
+                fb_cell.fill = PatternFill("solid", fgColor=_green_ramp(fb_n, _vmax))
 
-            # Keep grid tidy
+            # Position placements to match the reference (rows/cols)
+            pos_box("CF", 2, 8)    # H2:I3
+            pos_box("LF", 3, 6)    # F3:G4
+            pos_box("RF", 3, 10)   # J3:K4
+            pos_box("SS", 6, 6)    # F6:G7
+            pos_box("2B", 6, 10)   # J6:K7
+            pos_box("3B", 8, 3)    # C8:D9
+            pos_box("P", 8, 8)     # H8:I9
+            pos_box("1B", 8, 11)   # K8:L9
+
+            # Sizing for symmetry
+            ws.row_dimensions[1].height = 22
+            for r in range(FIELD_TOP, FIELD_BOTTOM + 1):
+                ws.row_dimensions[r].height = 22
+
+            for c in range(1, 3):  # A-B
+                ws.column_dimensions[col_letter(c)].width = 14
+            for c in range(FIELD_LEFT_COL, FIELD_RIGHT_COL + 1):
+                ws.column_dimensions[col_letter(c)].width = 10
+# Keep grid tidy
             for rr in range(2, 9):
                 ws.row_dimensions[rr].height = 22
             ws["A12"] = "Selected Stat Totals"
