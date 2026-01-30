@@ -2251,113 +2251,13 @@ if len(visible_cols) == 0:
     visible_cols = list(df_season.columns)
 
 # -----------------------------
-# TABLE VIEW (match export look) + heatmap
+# TABLE VIEW (match export look)
 # -----------------------------
 df_view = df_season[visible_cols] if visible_cols else df_season
 
-# Goal:
-# - Heatmap directly on the Streamlit table (pandas Styler)
-# - Thick vertical dividers between SPRAY | GB | FB | RUN groups
-#
-# Streamlit support for MultiIndex headers + Styler varies by version.
-# So we keep a flat header (more reliable), but we still:
-#   1) Order columns by group (already handled above)
-#   2) Add thick CSS borders at the group boundaries
-
-def _is_gb_col(c: str) -> bool:
-    return (c == "GB") or str(c).startswith("GB-")
-
-def _is_fb_col(c: str) -> bool:
-    return (c == "FB") or str(c).startswith("FB-")
-
-def _build_group_divider_styles(cols: list) -> list:
-    """Return pandas Styler table_styles that draw thick vertical borders after
-    the last GB column and the last FB column.
-
-    NOTE: Styler nth-child() is 1-based and counts visible columns.
-    We hide the index in the Styler below for consistency.
-    """
-    gb_idxs = [i for i, c in enumerate(cols) if _is_gb_col(c)]
-    fb_idxs = [i for i, c in enumerate(cols) if _is_fb_col(c)]
-
-    styles = []
-
-    def _add_right_border(col_zero_idx: int):
-        nth = col_zero_idx + 1  # 1-based
-        border_css = "border-right: 4px solid #111 !important;"
-        styles.extend([
-            {"selector": f"th:nth-child({nth})", "props": [("border-right", "4px solid #111")]} ,
-            {"selector": f"td:nth-child({nth})", "props": [("border-right", "4px solid #111")]} ,
-        ])
-
-    # Draw a divider after GB group and after FB group (if present)
-    if gb_idxs:
-        _add_right_border(max(gb_idxs))
-    if fb_idxs:
-        _add_right_border(max(fb_idxs))
-
-    return styles
-
-try:
-    cols = list(df_view.columns)
-    numeric_cols = [c for c in cols if c != "Player"]
-
-    styled = df_view.style
-
-    # Hide index at the Styler level (more reliable than Streamlit hide_index alone)
-    if hasattr(styled, "hide"):
-        try:
-            styled = styled.hide(axis="index")
-        except Exception:
-            pass
-
-    # Number formatting + heatmap
-    if numeric_cols:
-        styled = styled.format({c: "{:.0f}" for c in numeric_cols})
-        # Use default gradient colors for compatibility (some builds choke on cmap)
-        styled = styled.background_gradient(axis=None, subset=numeric_cols)
-
-    # Bold player names
-    if "Player" in cols:
-        styled = styled.set_properties(subset=["Player"], **{"font-weight": "bold", "font-size": "14px"})
-
-    # Make header a bit bigger to resemble the printout
-    styled = styled.set_table_styles(
-        [
-            {"selector": "th", "props": [("font-weight", "700"), ("font-size", "14px"), ("height", "45px")]},
-            {"selector": "td", "props": [("height", "45px"), ("font-size", "14px")]},
-        ],
-        overwrite=False,
-    )
-
-    # Render as a styled HTML table. This is the most reliable way to get
-    # both heatmap + borders across Streamlit versions.
-    st.write(styled)
-
-except Exception:
-    # Fallback: show three side-by-side tables so the group separation is obvious
-    # even if Styler heatmaps/borders aren't supported.
-    spray_cols = [c for c in df_view.columns if (c != "Player" and (not _is_gb_col(c)) and (not _is_fb_col(c)) and c not in RUN_KEYS)]
-    gb_cols = [c for c in df_view.columns if _is_gb_col(c)]
-    fb_cols = [c for c in df_view.columns if _is_fb_col(c)]
-    run_cols = [c for c in df_view.columns if c in RUN_KEYS]
-
-    # Keep Player in the left-most block
-    left_cols = ["Player"] + spray_cols if "Player" in df_view.columns else spray_cols
-
-    c1, c2, c3, c4 = st.columns([4, 3, 3, 3])
-    with c1:
-        st.caption("SPRAY")
-        st.dataframe(df_view[left_cols], use_container_width=True, hide_index=True)
-    with c2:
-        st.caption("GB")
-        st.dataframe(df_view[["Player"] + gb_cols] if "Player" in df_view.columns else df_view[gb_cols], use_container_width=True, hide_index=True)
-    with c3:
-        st.caption("FB")
-        st.dataframe(df_view[["Player"] + fb_cols] if "Player" in df_view.columns else df_view[fb_cols], use_container_width=True, hide_index=True)
-    with c4:
-        st.caption("RUN")
-        st.dataframe(df_view[["Player"] + run_cols] if "Player" in df_view.columns else df_view[run_cols], use_container_width=True, hide_index=True)
+# Keep one sheet on-screen, but order columns to mirror the exported report:
+# SPRAY columns first, then GB block, then FB block, then baserunning block.
+st.dataframe(df_view, use_container_width=True, hide_index=True)
 
 # -----------------------------
 # 📝 COACHES SCOUTING NOTES (per selected opponent/team)
