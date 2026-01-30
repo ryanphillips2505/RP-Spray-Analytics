@@ -2258,7 +2258,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
     header_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    header_fill = OPFill("solid", fgColor="D9E1F2")
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
 
     for cell in ws[1]:
         cell.font = header_font
@@ -2284,7 +2284,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         data_range = f"{start_cell}:{end_cell}"
 
         # gray out zeros (relative formula so each cell checks itself)
-        zero_fill = OPFill("solid", fgColor="EFEFEF")
+        zero_fill = PatternFill("solid", fgColor="EFEFEF")
         zero_rule = FormulaRule(
             formula=[f"{get_column_letter(start_col)}{start_row}=0"],
             fill=zero_fill,
@@ -2306,7 +2306,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         unk_idx = list(df_xl.columns).index("UNKNOWN") + 1
         unk_col = get_column_letter(unk_idx)
         unk_range = f"{unk_col}{start_row}:{unk_col}{end_row}"
-        unk_fill = OPFill("solid", fgColor="FFC7CE")
+        unk_fill = PatternFill("solid", fgColor="FFC7CE")
         unk_rule = CellIsRule(operator="greaterThan", formula=["0"], fill=unk_fill)
         ws.conditional_formatting.add(unk_range, unk_rule)
 
@@ -2551,9 +2551,9 @@ else:
             cell_font = Font(name=FONT_NAME, size=11, bold=False)
             small_font = Font(name=FONT_NAME, size=10, color='444444')
             gbfb_font = Font(name=FONT_NAME, size=11, bold=True)
-            gray_fill = OPFill("solid", fgColor="F2F2F2")
-            grass_fill = OPFill("solid", fgColor="D9EAD3")  # lighter green
-            white_fill = OPFill("solid", fgColor="FFFFFF")
+            gray_fill = PatternFill("solid", fgColor="F2F2F2")
+            grass_fill = PatternFill("solid", fgColor="D9EAD3")  # lighter green
+            white_fill = PatternFill("solid", fgColor="FFFFFF")
             thin = Side(style="thin", color="9E9E9E")
             box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -2615,7 +2615,7 @@ else:
                     c1 = (244, 204, 204)
                 rgb = tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
                 hex_rgb = "%02X%02X%02X" % rgb
-                return OPFill("solid", fgColor=hex_rgb)
+                return PatternFill("solid", fgColor=hex_rgb)
 
             # Build per-position totals (GB and FB separately)
             positions = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P"]
@@ -2679,7 +2679,7 @@ else:
 
             header_font = Font(bold=True)
             header_align = Alignment(horizontal="center", vertical="center")
-            header_fill = OPFill("solid", fgColor="EDEDED")
+            header_fill = PatternFill("solid", fgColor="EDEDED")
             for cell in ws[13]:
                 cell.font = header_font
                 cell.alignment = header_align
