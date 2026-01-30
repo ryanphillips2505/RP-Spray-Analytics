@@ -348,7 +348,9 @@ os.makedirs(TEAM_SEASON_DIR, exist_ok=True)
 # -----------------------------
 # ENGINE CONSTANTS (MUST EXIST BEFORE empty_stat_dict/db_load)
 # -----------------------------
-LOCATION_KEYS = []  # location tracking removed (only GB/FB totals)
+POSITION_KEYS = ["P","C","1B","2B","3B","SS","LF","CF","RF"]
+# Track GB/FB to each position (no spray chart grid buckets)
+LOCATION_KEYS = ([f"GB-{p}" for p in POSITION_KEYS] + [f"FB-{p}" for p in POSITION_KEYS])
 BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = []
 COMBO_KEYS = []
@@ -739,6 +741,46 @@ def infer_ball_type_from_fielder_words(line_lower: str) -> Optional[str]:
     if any(m in ll for m in infield_markers):
         return "GB"
     return None
+
+
+
+def classify_position_from_line(line_lower: str) -> Optional[str]:
+    """
+    Best-effort fielder/position inference from a GC play-by-play line.
+
+    Returns one of: P, C, 1B, 2B, 3B, SS, LF, CF, RF
+    """
+    ll = (line_lower or "").lower()
+
+    # Map patterns to positions; we pick the earliest match in the string.
+    patterns = [
+        (r"\bcatcher\b", "C"),
+        (r"\bto catcher\b", "C"),
+        (r"\bpitcher\b|\bto pitcher\b|back to the mound", "P"),
+        (r"\bfirst baseman\b|\bto first baseman\b", "1B"),
+        (r"\bsecond baseman\b|\bto second baseman\b", "2B"),
+        (r"\bthird baseman\b|\bto third baseman\b", "3B"),
+        (r"\bshortstop\b|\bto shortstop\b", "SS"),
+        (r"\bleft fielder\b|\bto left field\b", "LF"),
+        (r"\bcenter fielder\b|\bto center field\b", "CF"),
+        (r"\bright fielder\b|\bto right field\b", "RF"),
+        (r"left-center", "CF"),
+        (r"right-center", "CF"),
+    ]
+
+    best_pos = None
+    best_idx = None
+    for rx, pos in patterns:
+        m = re.search(rx, ll)
+        if not m:
+            continue
+        idx = m.start()
+        if best_idx is None or idx < best_idx:
+            best_idx = idx
+            best_pos = pos
+
+    return best_pos
+
 
 
 def classify_location(line_lower: str, strict_mode: bool = False):
@@ -1871,15 +1913,18 @@ if process_clicked:
             if not is_ball_in_play(line_lower):
                 continue
 
-            # Location tracking removed — only count GB / FB totals
+            # Count BIP as GB/FB totals + GB/FB by position (P/C/1B/2B/3B/SS/LF/CF/RF)
             ball_type, bt_conf, bt_reasons = classify_ball_type(line_lower)
 
-            # If regex didn't catch it, infer from fielder words (without recording position)
+            # Infer fielder position from words in the line
+            pos = classify_position_from_line(line_lower)
+
+            # If regex didn't catch GB/FB, infer from fielder words
             if ball_type is None:
                 ball_type = infer_ball_type_from_fielder_words(line_lower)
 
             if ball_type is None:
-                # can't classify GB/FB — skip (keeps data clean while you rebuild)
+                # can't classify GB/FB — skip
                 continue
 
             # (confidence labels kept for future debug; not displayed)
@@ -1887,8 +1932,17 @@ if process_clicked:
             _ = bt_reasons
 
             if ball_type in BALLTYPE_KEYS:
+                # Totals
                 game_team[ball_type] += 1
                 game_players[batter][ball_type] += 1
+
+                # Position buckets (only if we can confidently infer a position)
+                if pos:
+                    k = f"{ball_type}-{pos}"
+                    if k in game_team:
+                        game_team[k] += 1
+                    if k in game_players[batter]:
+                        game_players[batter][k] += 1
 
         add_game_to_season(season_team, season_players, game_team, game_players)
 
