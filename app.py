@@ -2559,7 +2559,7 @@ else:
 
             # Title row
             ws.merge_cells(start_row=1, start_column=3, end_row=1, end_column=12)
-            ws.cell(row=1, column=3, value=f"Individual Spray Summary — {player_name}").font = title_font
+            ws.cell(row=1, column=3, value=f"Individual Spray Summary — {p}").font = title_font
             ws.cell(row=1, column=3).alignment = Alignment(horizontal="center", vertical="center")
 
             # Section label
