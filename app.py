@@ -2594,6 +2594,14 @@ else:
                 return PatternFill("solid", fgColor=_heat_hex(v, vmax))
 
             def box(r1, c1, r2, c2, fill, text_):
+                # Unmerge any existing merged cells that overlap this box (prevents MergedCell write errors)
+                try:
+                    for _rng in list(ws.merged_cells.ranges):
+                        min_col, min_row, max_col, max_row = _rng.bounds
+                        if not (c2 < min_col or c1 > max_col or r2 < min_row or r1 > max_row):
+                            ws.unmerge_cells(str(_rng))
+                except Exception:
+                    pass
                 ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
                 cell = ws.cell(row=r1, column=c1)
                 cell.value = text_
