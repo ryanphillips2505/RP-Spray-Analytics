@@ -2553,15 +2553,12 @@ else:
             ws["A2"].font = small_font
             ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
-            # Set column widths for the field area
+            # ---- Field layout (portrait, MLB-clean) ----
+            # Column widths tuned to fit 1-page portrait
             for col_letter in list("ABCDEFG"):
-                if col_letter not in ("A", "B"):
-                    ws.column_dimensions[col_letter].width = 11
-            ws.column_dimensions["A"].width = 18
-            ws.column_dimensions["B"].width = 10
-
-            field_fill = PatternFill("solid", fgColor="EAF6EA")  # light turf
-            dirt_fill = PatternFill("solid", fgColor="F3E7D3")   # light dirt
+                ws.column_dimensions[col_letter].width = 11
+            ws.column_dimensions["A"].width = 18  # label column
+            ws.column_dimensions["B"].width = 10  # left margin for field
 
             def _hex_to_rgb(h):
                 h = h.strip("#")
@@ -2593,64 +2590,70 @@ else:
             def _heat_fill(v, vmax):
                 return PatternFill("solid", fgColor=_heat_hex(v, vmax))
 
-            def box(r1, c1, r2, c2, fill, text_):
-                # Unmerge any existing merged cells that overlap this box (prevents MergedCell write errors)
-                try:
-                    for _rng in list(ws.merged_cells.ranges):
-                        min_col, min_row, max_col, max_row = _rng.bounds
-                        if not (c2 < min_col or c1 > max_col or r2 < min_row or r1 > max_row):
-                            ws.unmerge_cells(str(_rng))
-                except Exception:
-                    pass
-                ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
-                cell = ws.cell(row=r1, column=c1)
-                cell.value = text_
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.fill = fill
-                for rr in range(r1, r2 + 1):
-                    for cc in range(c1, c2 + 1):
-                        ws.cell(row=rr, column=cc).border = box_border
-                        ws.cell(row=rr, column=cc).fill = fill
+            header_fill = PatternFill("solid", fgColor="F3F4F6")  # clean light gray
 
-            def gbfb(pos_key):
+            def _gbfb(pos_key):
                 gb = int(st_p.get(f"GB-{pos_key}", 0) or 0)
                 fb = int(st_p.get(f"FB-{pos_key}", 0) or 0)
                 return gb, fb
 
-            # Build totals for heat coloring (GB+FB by position)
             _pos_keys = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P"]
-            _totals = {}
-            for _k in _pos_keys:
-                g, f = gbfb(_k)
-                _totals[_k] = int(g) + int(f)
-            _vmax = max(1, max(_totals.values()) if _totals else 1)
+            _gb_map = {k: _gbfb(k)[0] for k in _pos_keys}
+            _fb_map = {k: _gbfb(k)[1] for k in _pos_keys}
+            _vmax_gb = max(1, max(_gb_map.values()) if _gb_map else 1)
+            _vmax_fb = max(1, max(_fb_map.values()) if _fb_map else 1)
 
-            # Outfield (more symmetrical + centered)
-            gb, fb = gbfb("LF")
-            box(3, 1, 4, 2, _heat_fill(_totals["LF"], _vmax), f"LF\nGB {gb}  |  FB {fb}")
+            def _cell(r, c, value, fill, bold=False):
+                cell = ws.cell(row=r, column=c)
+                cell.value = value
+                cell.fill = fill
+                cell.border = box_border
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.font = Font(name=FONT_NAME, size=12, bold=bold, color="111827")
+                return cell
 
-            gb, fb = gbfb("CF")
-            box(2, 3, 3, 5, _heat_fill(_totals["CF"], _vmax), f"CF\nGB {gb}  |  FB {fb}")
+            def pos_box(pos, r, c):
+                """
+                2-row x 2-col box:
+                  row r: merged header (pos)
+                  row r+1: GB (left) + FB (right) with separate heat fills
+                c is the left column index (box spans c..c+1)
+                """
+                # Header
+                ws.merge_cells(start_row=r, start_column=c, end_row=r, end_column=c+1)
+                h = ws.cell(row=r, column=c)
+                h.value = pos
+                h.fill = header_fill
+                h.border = box_border
+                h.alignment = Alignment(horizontal="center", vertical="center")
+                h.font = Font(name=FONT_NAME, size=12, bold=True, color="111827")
+                ws.cell(row=r, column=c+1).border = box_border
+                ws.cell(row=r, column=c+1).fill = header_fill
 
-            gb, fb = gbfb("RF")
-            box(3, 6, 4, 7, _heat_fill(_totals["RF"], _vmax), f"RF\nGB {gb}  |  FB {fb}")
+                gb = _gb_map.get(pos, 0)
+                fb = _fb_map.get(pos, 0)
 
-            # Infield (balanced diamond)
-            gb, fb = gbfb("3B")
-            box(6, 2, 7, 3, _heat_fill(_totals["3B"], _vmax), f"3B\nGB {gb}  |  FB {fb}")
+                _cell(r+1, c,   f"GB {gb}", _heat_fill(gb, _vmax_gb))
+                _cell(r+1, c+1, f"FB {fb}", _heat_fill(fb, _vmax_fb))
 
-            gb, fb = gbfb("SS")
-            box(5, 3, 6, 4, _heat_fill(_totals["SS"], _vmax), f"SS\nGB {gb}  |  FB {fb}")
+            # ---- Symmetric placement (B..G) ----
+            # Outfield
+            pos_box("CF", 2, 4)  # D-E
+            pos_box("LF", 3, 2)  # B-C
+            pos_box("RF", 3, 6)  # F-G
 
-            gb, fb = gbfb("2B")
-            # Keep 2B tight to avoid overlaps in a 7-col portrait grid
-            box(5, 5, 6, 5, _heat_fill(_totals["2B"], _vmax), f"2B\nGB {gb}  |  FB {fb}")
+            # Infield
+            pos_box("3B", 5, 2)  # B-C
+            pos_box("SS", 5, 4)  # D-E
+            pos_box("2B", 5, 6)  # F-G
 
-            gb, fb = gbfb("1B")
-            box(6, 6, 7, 7, _heat_fill(_totals["1B"], _vmax), f"1B\nGB {gb}  |  FB {fb}")
+            # Bottom row
+            pos_box("P",  7, 4)  # D-E
+            pos_box("1B", 7, 6)  # F-G
 
-            gb, fb = gbfb("P")
-            box(7, 3, 8, 5, _heat_fill(_totals["P"], _vmax), f"P\nGB {gb}  |  FB {fb}")
+            # Keep grid tidy
+            for rr in range(2, 9):
+                ws.row_dimensions[rr].height = 22
 
             ws["A12"] = "Selected Stat Totals"
             ws["A12"].font = small_font
