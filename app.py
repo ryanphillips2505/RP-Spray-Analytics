@@ -8,39 +8,6 @@ st.cache_data.clear()
 import os
 import json
 import base64
-import tempfile
-
-# ------------------------------------
-# EMBEDDED EXCEL TEMPLATE IMAGE (Overall Spray Chart)
-# ------------------------------------
-# This is a blank "Overall Spray Chart" template image that gets inserted into the
-# Individual Spray Excel export under the field summary. It is embedded so the app
-# does not require a separate PNG file on disk.
-# ------------------------------------
-# OVERALL SPRAY CHART TEMPLATE IMAGE (file-based)
-# ------------------------------------
-# Put a PNG named "overall_spray_template.png" in the SAME folder as this app.py.
-# The Individual Spray Excel export will insert that image (blank chart) under the SB/CS totals.
-
-def _get_overall_spray_template_png_path() -> str:
-    """Return local path to overall_spray_template.png if present, else empty string.
-
-    Preferred location (matches your repo layout):
-      - ./assets/overall_spray_template.png
-
-    Fallback:
-      - ./overall_spray_template.png  (same folder as app.py)
-    """
-    try:
-        here = os.path.dirname(os.path.abspath(__file__))
-        p1 = os.path.join(here, "assets", "overall_spray_template.png")
-        if os.path.exists(p1):
-            return p1
-        p2 = os.path.join(here, "overall_spray_template.png")
-        return p2 if os.path.exists(p2) else ""
-    except Exception:
-        return ""
-
 import re
 import hashlib
 import httpx
@@ -92,7 +59,6 @@ from io import BytesIO
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.drawing.image import Image as XLImage
 from supabase import create_client, Client
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -1147,9 +1113,6 @@ def db_save_season_totals(
     existing_meta["archived_players"] = archived_list
     if coach_notes is not None:
         existing_meta["coach_notes"] = str(coach_notes)
-    if player_notes is not None:
-        # Stored as a JSON string (dict of player -> note)
-        existing_meta["player_notes"] = str(player_notes)
 
     payload = {
         "team": season_team,
@@ -2532,51 +2495,7 @@ else:
 
             st.session_state[indiv_key] = [t for t in INDIV_TYPES if t in picked_set]
 
-    
-    # -----------------------------
-    # 📝 PLAYER NOTES (per selected hitter — prints on Individual Excel)
-    # -----------------------------
-    pn_key = f"player_notes__{TEAM_CODE_SAFE}__{team_key}"
-    if pn_key not in st.session_state:
-        st.session_state[pn_key] = db_get_player_notes(TEAM_CODE_SAFE, team_key)
-
-    try:
-        _pn_dict = json.loads(st.session_state.get(pn_key, "") or "{}")
-        if not isinstance(_pn_dict, dict):
-            _pn_dict = {}
-    except Exception:
-        _pn_dict = {}
-
-    _safe_p = re.sub(r"[^A-Za-z0-9_]+", "_", str(selected_player))
-    _cur_note = str(_pn_dict.get(selected_player, "") or "")
-
-    with st.expander("📝 Player Notes (prints on Individual Excel)", expanded=False):
-        _new_note = st.text_area(
-            f"Notes for {selected_player}:",
-            value=_cur_note,
-            height=140,
-            key=f"{pn_key}__box__{_safe_p}",
-        )
-
-        if st.button("💾 Save Player Note", key=f"{pn_key}__save__{_safe_p}"):
-            _pn_dict[selected_player] = str(_new_note or "")
-            pn_json = json.dumps(_pn_dict, ensure_ascii=False)
-            st.session_state[pn_key] = pn_json
-
-            # Preserve everything else; only update meta.player_notes
-            db_save_season_totals(
-                TEAM_CODE_SAFE,
-                team_key,
-                season_team,
-                season_players,
-                games_played,
-                archived_players,
-                player_notes=pn_json,
-            )
-
-            st.success("Player note saved.")
-
-# Current individual view types
+    # Current individual view types
     indiv_types_selected = st.session_state.get(indiv_key, list(INDIV_TYPES))
     if not indiv_types_selected:
         st.warning("No stats selected. Use Stat Edit to choose at least one stat.")
@@ -2626,11 +2545,13 @@ else:
         for p in selectable_players:
             st_p = season_players.get(p, {})
             rows_p = []
-            # Individual Excel: we only show running-game totals here (SB / CS).
-            # GB/FB and location totals are already displayed on the field graphic above,
-            # so listing them again is redundant.
-            for t in ["SB", "CS"]:
-                rows_p.append({"Type": t, "Count": st_p.get(t, 0)})
+            for t in indiv_types_selected:
+                if t == "GB (total)":
+                    rows_p.append({"Type": t, "Count": st_p.get("GB", 0)})
+                elif t == "FB (total)":
+                    rows_p.append({"Type": t, "Count": st_p.get("FB", 0)})
+                else:
+                    rows_p.append({"Type": t, "Count": st_p.get(t, 0)})
 
             df_p = pd.DataFrame(rows_p)
             sn = _sheet_name(p)
@@ -2878,226 +2799,193 @@ else:
             for rr in range(2, 9):
                 ws.row_dimensions[rr].height = 22
 
-            ws["A12"] = "Running Game Totals (SB/CS)"
-            ws["A12"].font = Font(name=FONT_NAME, size=10, color="444444")
-            ws["A12"].alignment = Alignment(horizontal="left", vertical="center")
+            
+# -----------------------------
+# Running Game Totals (SB/CS) — keep it simple (A:B only)
+# -----------------------------
+ws["A12"] = "Running Game Totals (SB/CS)"
+ws["A12"].font = Font(name=FONT_NAME, size=10, color="444444")
+ws["A12"].alignment = Alignment(horizontal="left", vertical="center")
 
-            # --- SB/CS table stacked in columns A (Type) and B (Count) ---
-            # Clear any prior "Selected Stat Totals" content that may have been written here
-            for rr in range(13, 31):
-                for cc in (1, 2):
-                    cell = ws.cell(row=rr, column=cc)
-                    cell.value = None
-                    cell.fill = white_fill
-                    cell.border = Border()
-                    cell.alignment = Alignment(horizontal="left", vertical="center")
+# Clear any old header styling on row 13 so we don't accidentally format extra columns
+for c in range(1, 25):
+    ws.cell(row=13, column=c).font = Font(name=FONT_NAME, size=11, bold=False)
+    ws.cell(row=13, column=c).fill = PatternFill()
+    ws.cell(row=13, column=c).alignment = Alignment(horizontal="general", vertical="center")
+    ws.cell(row=13, column=c).border = Border()
 
-            # Header row
-            ws["A13"] = "Type"
-            ws["B13"] = "Count"
-            header_font = Font(bold=True)
-            header_align = Alignment(horizontal="center", vertical="center")
-            header_fill = PatternFill("solid", fgColor="EDEDED")
-            for addr in ("A13", "B13"):
-                cell = ws[addr]
-                cell.font = header_font
-                cell.alignment = header_align
-                cell.fill = header_fill
-                cell.border = box_border
+header_font = Font(name=FONT_NAME, bold=True)
+header_align = Alignment(horizontal="center", vertical="center")
+header_fill = PatternFill("solid", fgColor="EDEDED")
 
-            # Data rows
-            sb_val = int(_totals.get("SB", 0) or 0)
-            cs_val = int(_totals.get("CS", 0) or 0)
+ws["A13"] = "Type"
+ws["B13"] = "Count"
+ws["A13"].font = header_font
+ws["B13"].font = header_font
+ws["A13"].alignment = header_align
+ws["B13"].alignment = header_align
+ws["A13"].fill = header_fill
+ws["B13"].fill = header_fill
+ws["A13"].border = box_border
+ws["B13"].border = box_border
 
-            ws["A14"] = "SB"
-            ws["B14"] = sb_val
-            ws["A15"] = "CS"
-            ws["B15"] = cs_val
+sb_val = int(season_players.get(p, {}).get("SB", 0) or 0)
+cs_val = int(season_players.get(p, {}).get("CS", 0) or 0)
 
-            for addr in ("A14", "B14", "A15", "B15"):
-                cell = ws[addr]
-                cell.font = cell_font
-                cell.alignment = Alignment(horizontal="center", vertical="center") if addr.startswith("B") else Alignment(horizontal="left", vertical="center")
-                cell.border = box_border
+ws["A14"] = "SB"
+ws["B14"] = sb_val
+ws["A15"] = "CS"
+ws["B15"] = cs_val
+for addr in ["A14","B14","A15","B15"]:
+    ws[addr].font = Font(name=FONT_NAME, size=11)
+    ws[addr].alignment = Alignment(horizontal="center", vertical="center")
+    ws[addr].border = box_border
 
-            ws.column_dimensions["A"].width = 18
-            ws.column_dimensions["B"].width = 10
-# --- Build "Overall Spray Chart" template (Excel formatting) under the SB/CS table ---
-# A true curved field outline cannot be drawn with cell borders alone.
-# To match your reference sheet closely, we insert a small FIELD OUTLINE image (left side only),
-# and we build the right-side table (At Bat / Result / Pitch Progression / Count / Notes)
-# using Excel cells, borders, and merges (fully print-safe).
-            def _get_field_only_png_path():
-                candidates = [
-                    os.path.join("assets", "overall_spray_field_only.png"),
-                    "overall_spray_field_only.png",
-                    os.path.join("assets", "overall_spray_template.png"),  # fallback if you keep the full template
-                    "overall_spray_template.png",
-                ]
-                for pth in candidates:
-                    try:
-                        if pth and os.path.exists(pth):
-                            return pth
-                    except Exception:
-                        pass
-                return None
+ws.column_dimensions["A"].width = 18
+ws.column_dimensions["B"].width = 10
 
-            def _draw_overall_spray_table(ws, top_row: int):
-                # Column map (tuned to print on one page next to the left chart area)
-                # Left chart uses A-L, table uses M-AD
-                thick = Side(style="medium", color="000000")
-                thin_side = Side(style="thin", color="000000")
-                thick_border = Border(left=thick, right=thick, top=thick, bottom=thick)
-                thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+# -----------------------------
+# Small overall spray template image (scaled) under the summary
+# -----------------------------
+try:
+    from openpyxl.drawing.image import Image as XLImage
 
-                COL_ATBAT = 13      # M
-                COL_RESULT_L = 14   # N
-                COL_RESULT_R = 18   # R
-                COL_PITCH_L = 19    # S
-                COL_PITCH_R = 26    # Z (8 columns)
-                COL_COUNT = 27      # AA
-                COL_NOTES_L = 28    # AB
-                COL_NOTES_R = 30    # AD
+    # Prefer repo asset path; fallback to same-folder path
+    template_candidates = [
+        os.path.join("assets", "overall_spray_template.png"),
+        "overall_spray_template.png",
+    ]
+    template_path = None
+    for cand in template_candidates:
+        if os.path.exists(cand):
+            template_path = cand
+            break
 
-                # Widths
-                ws.column_dimensions["M"].width = 10
-                for col in ["N","O","P","Q","R"]:
-                    ws.column_dimensions[col].width = 12
-                for col in ["S","T","U","V","W","X","Y","Z"]:
-                    ws.column_dimensions[col].width = 3
-                ws.column_dimensions["AA"].width = 9
-                for col in ["AB","AC","AD"]:
-                    ws.column_dimensions[col].width = 12
+    if template_path:
+        img = XLImage(template_path)
 
-                header_font2 = Font(name=FONT_NAME, size=10, bold=True)
-                header_align2 = Alignment(horizontal="center", vertical="center")
-                body_font2 = Font(name=FONT_NAME, size=10, bold=False)
+        # Scale to a small block so it stays 1-page friendly
+        target_w = 330  # pixels (tuned for one-page print)
+        scale = target_w / float(img.width) if img.width else 1.0
+        img.width = int(img.width * scale)
+        img.height = int(img.height * scale)
 
-                # Header row
-                ws.cell(row=top_row, column=COL_ATBAT, value="AT BAT #")
-                ws.merge_cells(start_row=top_row, start_column=COL_RESULT_L, end_row=top_row, end_column=COL_RESULT_R)
-                ws.cell(row=top_row, column=COL_RESULT_L, value="RESULT")
-                ws.merge_cells(start_row=top_row, start_column=COL_PITCH_L, end_row=top_row, end_column=COL_PITCH_R)
-                ws.cell(row=top_row, column=COL_PITCH_L, value="PITCH PROGRESSION")
-                ws.cell(row=top_row, column=COL_COUNT, value="COUNT")
-                ws.merge_cells(start_row=top_row, start_column=COL_NOTES_L, end_row=top_row, end_column=COL_NOTES_R)
-                ws.cell(row=top_row, column=COL_NOTES_L, value="NOTES")
+        ws.add_image(img, "A17")
+except Exception:
+    pass
 
-                # Style header cells (thick border across the full header span)
-                for cc in range(COL_ATBAT, COL_NOTES_R + 1):
-                    cell = ws.cell(row=top_row, column=cc)
-                    cell.font = header_font2
-                    cell.alignment = header_align2
-                    cell.border = thick_border
-                ws.row_dimensions[top_row].height = 20
+# -----------------------------
+# Coach worksheet block (matches your highlighted area: table on the right)
+# -----------------------------
+start_row = 17
+start_col = 13  # Column M
+col_atbat = start_col           # M
+col_result_start = start_col+1  # N
+col_result_end   = start_col+4  # Q
+col_grid_start   = start_col+5  # R
+col_grid_end     = start_col+14 # AA (10 cols)
+col_count        = start_col+15 # AB
+col_notes_start  = start_col+16 # AC
+col_notes_end    = start_col+20 # AG
 
-                # Body: 12 AB blocks, each 3 rows tall
-                block_h = 3
-                for i in range(12):
-                    r0 = top_row + 1 + i * block_h
-                    r1 = r0 + block_h - 1
-                    for rr in range(r0, r1 + 1):
-                        ws.row_dimensions[rr].height = 18
+# Column widths tuned to look like the reference sheet
+ws.column_dimensions[get_column_letter(col_atbat)].width = 9
+for c in range(col_result_start, col_result_end+1):
+    ws.column_dimensions[get_column_letter(c)].width = 4.2
+for c in range(col_grid_start, col_grid_end+1):
+    ws.column_dimensions[get_column_letter(c)].width = 2.2
+ws.column_dimensions[get_column_letter(col_count)].width = 8
+for c in range(col_notes_start, col_notes_end+1):
+    ws.column_dimensions[get_column_letter(c)].width = 4.2
 
-                    # Merge the big text regions per block
-                    ws.merge_cells(start_row=r0, start_column=COL_ATBAT, end_row=r1, end_column=COL_ATBAT)
-                    ws.merge_cells(start_row=r0, start_column=COL_RESULT_L, end_row=r1, end_column=COL_RESULT_R)
-                    ws.merge_cells(start_row=r0, start_column=COL_COUNT, end_row=r1, end_column=COL_COUNT)
-                    ws.merge_cells(start_row=r0, start_column=COL_NOTES_L, end_row=r1, end_column=COL_NOTES_R)
+thick = Side(style="medium", color="000000")
+thin_black = Side(style="thin", color="000000")
 
-                    # AB label
-                    ab_cell = ws.cell(row=r0, column=COL_ATBAT, value=f"#{i+1}")
-                    ab_cell.font = body_font2
-                    ab_cell.alignment = Alignment(horizontal="center", vertical="center")
+def set_border_range(r1, c1, r2, c2, outer_thick=True):
+    for rr in range(r1, r2+1):
+        for cc in range(c1, c2+1):
+            left = thick if outer_thick and cc == c1 else thin_black
+            right = thick if outer_thick and cc == c2 else thin_black
+            top = thick if outer_thick and rr == r1 else thin_black
+            bottom = thick if outer_thick and rr == r2 else thin_black
+            ws.cell(rr, cc).border = Border(left=left, right=right, top=top, bottom=bottom)
 
-                    # Thick borders for the whole block across M-AD
-                    for rr in range(r0, r1 + 1):
-                        for cc in range(COL_ATBAT, COL_NOTES_R + 1):
-                            ws.cell(row=rr, column=cc).border = thick_border
+# Header row
+hdr_r = start_row
+ws.cell(hdr_r, col_atbat, "AT BAT #").font = header_font
+ws.cell(hdr_r, col_atbat).alignment = header_align
 
-                    # Pitch grid S-Z with thin internal borders
-                    for rr in range(r0, r1 + 1):
-                        for cc in range(COL_PITCH_L, COL_PITCH_R + 1):
-                            cell = ws.cell(row=rr, column=cc)
-                            cell.border = thin_border
-                            cell.alignment = Alignment(horizontal="center", vertical="center")
+ws.merge_cells(start_row=hdr_r, start_column=col_result_start, end_row=hdr_r, end_column=col_result_end)
+ws.cell(hdr_r, col_result_start, "RESULT").font = header_font
+ws.cell(hdr_r, col_result_start).alignment = header_align
 
-                    # Restore thick perimeter around pitch grid
-                    for cc in range(COL_PITCH_L, COL_PITCH_R + 1):
-                        ws.cell(row=r0, column=cc).border = Border(left=thin_side, right=thin_side, top=thick, bottom=thin_side)
-                        ws.cell(row=r1, column=cc).border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thick)
-                    for rr in range(r0, r1 + 1):
-                        ws.cell(row=rr, column=COL_PITCH_L).border = Border(left=thick, right=thin_side, top=thin_side, bottom=thin_side)
-                        ws.cell(row=rr, column=COL_PITCH_R).border = Border(left=thin_side, right=thick, top=thin_side, bottom=thin_side)
+ws.merge_cells(start_row=hdr_r, start_column=col_grid_start, end_row=hdr_r, end_column=col_grid_end)
+ws.cell(hdr_r, col_grid_start, "PITCH PROGRESSION").font = header_font
+ws.cell(hdr_r, col_grid_start).alignment = header_align
 
-                    ws.cell(row=r0, column=COL_RESULT_L).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                    ws.cell(row=r0, column=COL_COUNT).alignment = Alignment(horizontal="center", vertical="top")
-                    ws.cell(row=r0, column=COL_NOTES_L).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+ws.cell(hdr_r, col_count, "COUNT").font = header_font
+ws.cell(hdr_r, col_count).alignment = header_align
 
-            try:
-                TPL_ROW = 16
+ws.merge_cells(start_row=hdr_r, start_column=col_notes_start, end_row=hdr_r, end_column=col_notes_end)
+ws.cell(hdr_r, col_notes_start, "NOTES").font = header_font
+ws.cell(hdr_r, col_notes_start).alignment = header_align
 
-                # Left side header
-                ws.merge_cells(start_row=TPL_ROW, start_column=1, end_row=TPL_ROW, end_column=12)  # A-L
-                hcell = ws.cell(row=TPL_ROW, column=1, value="OVERALL SPRAY CHART")
-                hcell.font = Font(name=FONT_NAME, size=12, bold=True)
-                hcell.alignment = Alignment(horizontal="center", vertical="center")
-                hcell.border = Border(left=Side(style="medium", color="000000"),
-                                      right=Side(style="medium", color="000000"),
-                                      top=Side(style="medium", color="000000"),
-                                      bottom=Side(style="medium", color="000000"))
-                ws.row_dimensions[TPL_ROW].height = 22
+# Draw header border
+set_border_range(hdr_r, col_atbat, hdr_r, col_notes_end, outer_thick=True)
+ws.row_dimensions[hdr_r].height = 22
 
-                # Big blank box under header (A-L)
-                box_top = TPL_ROW + 1
-                box_bottom = TPL_ROW + 36
-                left_thick = Side(style="medium", color="000000")
-                thin_black = Side(style="thin", color="000000")
-                for rr in range(box_top, box_bottom + 1):
-                    ws.row_dimensions[rr].height = 18
-                    for cc in range(1, 13):  # A-L
-                        cell = ws.cell(row=rr, column=cc)
-                        cell.value = None
-                        if rr in (box_top, box_bottom) or cc in (1, 12):
-                            cell.border = Border(
-                                left=left_thick if cc == 1 else thin_black,
-                                right=left_thick if cc == 12 else thin_black,
-                                top=left_thick if rr == box_top else thin_black,
-                                bottom=left_thick if rr == box_bottom else thin_black,
-                            )
-                        else:
-                            cell.border = Border()
-                        cell.fill = PatternFill("solid", fgColor="FFFFFF")
+# 12 at-bat rows; each block is 3 rows tall (so the pitch grid has space)
+block_h = 3
+first_data_row = hdr_r + 1
+for i in range(1, 13):
+    r1 = first_data_row + (i-1)*block_h
+    r2 = r1 + block_h - 1
 
-                # Insert field-only image inside left box (optional but closest match)
-                _field_png = _get_field_only_png_path()
-                if _field_png:
-                    _fimg = XLImage(_field_png)
-                    _orig_w = getattr(_fimg, "width", 1) or 1
-                    TARGET_W = 520
-                    _scale = TARGET_W / float(_orig_w)
-                    _fimg.width = int(_orig_w * _scale)
-                    _fimg.height = int((getattr(_fimg, "height", 1) or 1) * _scale)
-                    ws.add_image(_fimg, f"A{TPL_ROW+2}")
+    # row heights
+    for rr in range(r1, r2+1):
+        ws.row_dimensions[rr].height = 18
 
-                # Right side table
-                _draw_overall_spray_table(ws, top_row=TPL_ROW)
+    # AT BAT # merged
+    ws.merge_cells(start_row=r1, start_column=col_atbat, end_row=r2, end_column=col_atbat)
+    ws.cell(r1, col_atbat, f"#{i}").alignment = Alignment(horizontal="center", vertical="center")
+    ws.cell(r1, col_atbat).font = Font(name=FONT_NAME, size=11)
 
-            except Exception:
-                pass
+    # RESULT merged
+    ws.merge_cells(start_row=r1, start_column=col_result_start, end_row=r2, end_column=col_result_end)
+
+    # COUNT merged
+    ws.merge_cells(start_row=r1, start_column=col_count, end_row=r2, end_column=col_count)
+
+    # NOTES merged
+    ws.merge_cells(start_row=r1, start_column=col_notes_start, end_row=r2, end_column=col_notes_end)
+
+    # Pitch progression grid cells: keep as individual squares
+    for rr in range(r1, r2+1):
+        for cc in range(col_grid_start, col_grid_end+1):
+            ws.cell(rr, cc).alignment = Alignment(horizontal="center", vertical="center")
+
+    # Borders for whole block (thick outer, thin inside)
+    set_border_range(r1, col_atbat, r2, col_notes_end, outer_thick=True)
+
+    # Inner vertical separators thicker between main columns
+    for rr in range(r1, r2+1):
+        # separator before RESULT
+        ws.cell(rr, col_result_start).border = ws.cell(rr, col_result_start).border.copy(left=thick)
+        ws.cell(rr, col_result_end).border = ws.cell(rr, col_result_end).border.copy(right=thick)
+        ws.cell(rr, col_grid_start).border = ws.cell(rr, col_grid_start).border.copy(left=thick)
+        ws.cell(rr, col_grid_end).border = ws.cell(rr, col_grid_end).border.copy(right=thick)
+        ws.cell(rr, col_count).border = ws.cell(rr, col_count).border.copy(left=thick, right=thick)
+        ws.cell(rr, col_notes_start).border = ws.cell(rr, col_notes_start).border.copy(left=thick)
+        ws.cell(rr, col_notes_end).border = ws.cell(rr, col_notes_end).border.copy(right=thick)
+
+# Print setup: force one-page fit
+ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+ws.page_setup.fitToWidth = 1
+ws.page_setup.fitToHeight = 1
+ws.sheet_properties.pageSetUpPr.fitToPage = True
     excel_bytes = excel_out.getvalue()
 
     # CSV bytes (long format)
-    
-    # Pull per-player notes (stored as JSON in meta.player_notes) for CSV export too
-    _pn_key_csv = f"player_notes__{TEAM_CODE_SAFE}__{team_key}"
-    try:
-        _player_notes_dict_csv = json.loads(st.session_state.get(_pn_key_csv, "") or "{}")
-        if not isinstance(_player_notes_dict_csv, dict):
-            _player_notes_dict_csv = {}
-    except Exception:
-        _player_notes_dict_csv = {}
-
     long_rows = []
     for p in selectable_players:
         st_p = season_players.get(p, {})
@@ -3108,7 +2996,7 @@ else:
                 cnt = st_p.get("FB", 0)
             else:
                 cnt = st_p.get(t, 0)
-            long_rows.append({"Player": p, "Type": t, "Count": cnt, "Note": str(_player_notes_dict_csv.get(p, "") or "")})
+            long_rows.append({"Player": p, "Type": t, "Count": cnt})
 
     df_long = pd.DataFrame(long_rows)
     csv_long_bytes = df_long.to_csv(index=False).encode("utf-8")
