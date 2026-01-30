@@ -2574,7 +2574,7 @@ else:
             _header_font = Font(name=FONT_NAME, size=12, bold=True)
             _small_font = Font(name=FONT_NAME, size=11)
 
-                        # Coaches Notes (per player) — printable, saved into Excel
+            # Coaches Notes (per player) — printable, saved into Excel
             # Header row
             ws.merge_cells("A3:B3")
             ws["A3"].value = "Coaches Notes"
@@ -2585,6 +2585,7 @@ else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = _border
 
+            player_note_text = _player_notes_dict.get(p, "")
             # Body (editable note text)
             ws.merge_cells("A4:B10")
             ws["A4"].value = player_note_text or ""
@@ -2592,7 +2593,7 @@ else:
                 for c in range(1, 3):
                     cell = ws.cell(row=r, column=c)
                     cell.font = _small_font
-                    cell.fill = PatternFill("solid", fgColor="FFFFFF")
+                    cell.fill = _notes_fill
                     cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
                     cell.border = _border
             ws["A2"].value = "GB / FB by position"
@@ -2869,7 +2870,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
