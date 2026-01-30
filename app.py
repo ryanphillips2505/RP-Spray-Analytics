@@ -2692,8 +2692,9 @@ else:
 
             # Build per-position totals (GB and FB separately)
             positions = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P"]
-            gb_totals = {p: int(_totals.get(p, 0) or 0) if p in _totals else 0 for p in positions}
-            fb_totals = {p: int(_totals.get(f"FB-{p}", 0) or 0) if f"FB-{p}" in _totals else 0 for p in positions}
+            # Use per-player season stats dict for combo buckets (GB-LF, FB-LF, etc.)
+            gb_totals = {pos: int(st_p.get(f"GB-{pos}", 0) or 0) for pos in positions}
+            fb_totals = {pos: int(st_p.get(f"FB-{pos}", 0) or 0) for pos in positions}
 
             gb_vmax = max([gb_totals[p] for p in positions] + [0])
             fb_vmax = max([fb_totals[p] for p in positions] + [0])
@@ -2907,6 +2908,24 @@ else:
                     ws.cell(rr, col_notes_start).border = ws.cell(rr, col_notes_start).border.copy(left=thick)
                     ws.cell(rr, col_notes_end).border = ws.cell(rr, col_notes_end).border.copy(right=thick)
 
+            # EXTRA NOTES & GENERAL INFORMATION block (below #12)
+            extra_hdr_r = first_data_row + 12 * block_h + 1
+            ws.merge_cells(start_row=extra_hdr_r, start_column=col_atbat, end_row=extra_hdr_r, end_column=col_notes_end)
+            eh = ws.cell(extra_hdr_r, col_atbat, "EXTRA NOTES & GENERAL INFORMATION")
+            eh.font = Font(name=FONT_NAME, size=12, bold=True)
+            eh.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[extra_hdr_r].height = 22
+            _set_border_range(extra_hdr_r, col_atbat, extra_hdr_r, col_notes_end)
+
+            # Big write-in area
+            extra_r1 = extra_hdr_r + 1
+            extra_r2 = extra_r1 + 10  # write-in height
+            ws.merge_cells(start_row=extra_r1, start_column=col_atbat, end_row=extra_r2, end_column=col_notes_end)
+            ws.cell(extra_r1, col_atbat).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            for rr in range(extra_r1, extra_r2 + 1):
+                ws.row_dimensions[rr].height = 20
+            _set_border_range(extra_r1, col_atbat, extra_r2, col_notes_end)
+
             # Print setup per sheet: force one-page fit (like your highlighted area)
             ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
             ws.page_setup.fitToWidth = 1
@@ -2979,7 +2998,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
