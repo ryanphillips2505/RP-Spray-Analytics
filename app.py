@@ -13,6 +13,7 @@ import hashlib
 import httpx
 import time  # anti-stuck processing lock + failsafe unlock
 from datetime import datetime
+import uuid
 
 def _write_table_two_blocks(ws, start_row, cols, row_values, split_at=None, gap=2):
     """Write a header + rows into two side-by-side blocks for landscape printing.
@@ -3004,7 +3005,7 @@ for i in range(1, 13):
     with dl_a:
         st.download_button(
             label="📥 Download Individual Spray (Excel - sheets per player)",
-            key="dl_individual_excel_sheets_per_player",
+            key=f"dl_indiv_excel_{uuid.uuid4().hex}",
             data=excel_bytes,
             file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3013,7 +3014,7 @@ for i in range(1, 13):
     with dl_b:
         st.download_button(
             label="📄 Download Individual Spray (CSV)",
-            key="dl_individual_csv_long",
+            key=f"dl_indiv_csv_{uuid.uuid4().hex}",
             data=csv_long_bytes,
             file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.csv",
             mime="text/csv",
@@ -3041,7 +3042,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 
 
