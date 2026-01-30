@@ -1974,7 +1974,7 @@ if process_clicked:
 # -----------------------------
 # SEASON OUTPUTS
 # -----------------------------
-st.subheader(f"📔 Per-Player Spray – SEASON TO DATE ({selected_team})")
+st.subheader(f"📔 TEAM - SEASON TO DATE ({selected_team})")
 
 row_left, row_right = st.columns([8, 2])
 with row_left:
@@ -2584,6 +2584,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
