@@ -2225,26 +2225,14 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             stopIfTrue=True,
         )
         ws.conditional_formatting.add(data_range, zero_rule)
-        # heatmap — apply to all stat columns EXCEPT GB% and FB%
-        for col_idx, col_name in enumerate(df_season.columns, start=1):
-            if col_name in ["Player", "GB%", "FB%"]:
-                continue
-            # only apply to numeric columns
-            try:
-                if col_name in df_season.columns and not pd.api.types.is_numeric_dtype(df_season[col_name]):
-                    continue
-            except Exception:
-                pass
 
-            col_letter = get_column_letter(col_idx)
-            col_range = f"{col_letter}{start_row}:{col_letter}{end_row}"
-
-            heat_rule = ColorScaleRule(
-                start_type="num", start_value=1, start_color="FFFFFF",
-                mid_type="percentile", mid_value=50, mid_color="FFF2CC",
-                end_type="max", end_color="F8CBAD",
-            )
-            ws.conditional_formatting.add(col_range, heat_rule)
+        # heatmap
+        heat_rule = ColorScaleRule(
+            start_type="num", start_value=1, start_color="FFFFFF",
+            mid_type="percentile", mid_value=50, mid_color="FFF2CC",
+            end_type="max", end_color="F8CBAD",
+        )
+        ws.conditional_formatting.add(data_range, heat_rule)
 
     # highlight UNKNOWN > 0
     if "UNKNOWN" in df_season.columns:
@@ -2261,25 +2249,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         for cell in row:
             if isinstance(cell.value, (int, float)):
                 cell.alignment = num_align
-
-
-    # Coaches Notes — force font size 12 (header + body block if present)
-    notes_font = Font(size=12)
-    try:
-        header_cells = []
-        for r in ws.iter_rows():
-            for c in r:
-                if isinstance(c.value, str):
-                    v = c.value.strip().lower()
-                    if ("coach" in v) and ("note" in v):
-                        header_cells.append((c.row, c.column))
-        # If we find a "Coaches Notes" header, format a reasonable block under it.
-        for hr, hc in header_cells:
-            for rr in range(hr, min(hr + 40, ws.max_row + 1)):
-                for cc in range(hc, min(hc + 8, ws.max_column + 1)):
-                    ws.cell(row=rr, column=cc).font = notes_font
-    except Exception:
-        pass
 
     # Format pitching sheet (if present)
     if "df_pitching" in locals() and isinstance(df_pitching, pd.DataFrame) and not df_pitching.empty:
