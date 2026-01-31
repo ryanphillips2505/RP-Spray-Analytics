@@ -2298,17 +2298,25 @@ out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
 
-    # Build export frame (keep all other stats numeric, convert GB/FB totals to % columns)
+    # Build export frame (keep all other stats numeric)
+    # Convert GB/FB totals to GB% / FB% (percent of BIP) in the Excel export
     df_export = df_xl.copy() if df_xl is not None else pd.DataFrame()
 
-    gb_col_name = "GB" if "GB" in df_export.columns else None
-    fb_col_name = "FB" if "FB" in df_export.columns else None
+    if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
+        gb_vals = pd.to_numeric(df_export["GB"], errors="coerce").fillna(0)
+        fb_vals = pd.to_numeric(df_export["FB"], errors="coerce").fillna(0)
+        denom = (gb_vals + fb_vals).replace({0: pd.NA})
+        df_export["GB%"] = (gb_vals / denom).fillna(0)
+        df_export["FB%"] = (fb_vals / denom).fillna(0)
 
-    # Rename for presentation (Excel only)
-    if gb_col_name:
-        df_export = df_export.rename(columns={"GB": "GB%"})
-    if fb_col_name:
-        df_export = df_export.rename(columns={"FB": "FB%"})
+        # Drop raw totals (show percent instead)
+        df_export = df_export.drop(columns=["GB", "FB"])
+
+        # Place percent columns right after Player
+        cols = list(df_export.columns)
+        if "Player" in cols:
+            rest = [c for c in cols if c not in ["Player", "GB%", "FB%"]]
+            df_export = df_export[["Player", "GB%", "FB%"] + rest]
 
     # Write data starting at row 2 (we'll insert team header at row 1)
     df_export.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
@@ -2371,31 +2379,24 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             pass
         ws.column_dimensions[get_column_letter(player_col_idx)].width = min(max(max_len + 2, 12), 34)
 
-    # Percent columns: replace values with formulas based on original GB/FB totals
-    # We renamed columns to GB% / FB% above. We'll locate their indices in Excel.
+    # Locate GB% / FB% columns and format as percent
     gbp_idx = None
     fbp_idx = None
     for j in range(1, ws.max_column + 1):
-        v = str(ws.cell(row=2, column=j).value).strip()
-        if v == "GB%":
+        h = str(ws.cell(row=2, column=j).value or "").strip()
+        if h == "GB%":
             gbp_idx = j
-        elif v == "FB%":
+        elif h == "FB%":
             fbp_idx = j
 
-    # The source totals are in df_xl columns GB/FB; we can compute via adjacent columns? easiest: use hidden helper cols? no.
-    # Instead, we keep the written numeric totals in the cells and convert them in-place:
-    # We'll read current cell values in row r for GB%/FB% (which are actually the totals) and replace with formulas using cell refs.
-    if gbp_idx and fbp_idx:
-        gb_letter = get_column_letter(gbp_idx)
-        fb_letter = get_column_letter(fbp_idx)
+    if gbp_idx:
+        col_letter = get_column_letter(gbp_idx)
         for r in range(3, ws.max_row + 1):
-            gb_ref = f"{gb_letter}{r}"
-            fb_ref = f"{fb_letter}{r}"
-            # GB% formula
-            ws[gb_ref].value = f"=IF(({gb_ref}+{fb_ref})=0,0,{gb_ref}/({gb_ref}+{fb_ref}))"
-            ws[fb_ref].value = f"=IF(({gb_ref}+{fb_ref})=0,0,{fb_ref}/({gb_ref}+{fb_ref}))"
-            ws[gb_ref].number_format = "0%"
-            ws[fb_ref].number_format = "0%"
+            ws[f"{col_letter}{r}"].number_format = "0%"
+    if fbp_idx:
+        col_letter = get_column_letter(fbp_idx)
+        for r in range(3, ws.max_row + 1):
+            ws[f"{col_letter}{r}"].number_format = "0%"
 
     # Put a vertical border separating the percent columns from the other stats
     # (thick line after FB% if present)
