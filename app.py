@@ -2483,18 +2483,20 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     data_max_row = ws.max_row
 
     # Apply rules per column (clean + predictable)
-    for c in range(1, ws.max_column + 1):
-        if c in exclude_idxs:
-            continue
-        col_letter = get_column_letter(c)
-        rng = f"{col_letter}{data_min_row}:{col_letter}{data_max_row}"
+    # Guard: if there are no data rows yet (only headers), skip heatmap to avoid invalid ranges.
+    if data_max_row >= data_min_row:
+        for c in range(1, ws.max_column + 1):
+            if c in exclude_idxs:
+                continue
+            col_letter = get_column_letter(c)
+            rng = f"{col_letter}{data_min_row}:{col_letter}{data_max_row}"
 
-        # Highest first with stopIfTrue so bins don't overlap weirdly
-        ws.conditional_formatting.add(rng, CellIsRule(operator="greaterThanOrEqual", formula=["20"], fill=fill_20p, stopIfTrue=True))
-        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["16", "19"], fill=fill_16_19, stopIfTrue=True))
-        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["11", "15"], fill=fill_11_15, stopIfTrue=True))
-        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["6", "10"], fill=fill_6_10, stopIfTrue=True))
-        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["1", "5"], fill=fill_1_5, stopIfTrue=True))
+            # Highest first with stopIfTrue so bins don't overlap weirdly
+            ws.conditional_formatting.add(rng, CellIsRule(operator="greaterThanOrEqual", formula=["20"], fill=fill_20p, stopIfTrue=True))
+            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["16", "19"], fill=fill_16_19, stopIfTrue=True))
+            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["11", "15"], fill=fill_11_15, stopIfTrue=True))
+            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["6", "10"], fill=fill_6_10, stopIfTrue=True))
+            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["1", "5"], fill=fill_1_5, stopIfTrue=True))
 
     # Watermark via print header (shows on print/PDF)
     try:
