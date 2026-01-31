@@ -385,6 +385,13 @@ def require_team_access():
                 st.error("Invalid access code.")
 
     st.stop()
+
+# -----------------------------
+# TEAM ACCESS (sets TEAM_CODE)
+# -----------------------------
+TEAM_CODE, _TEAM_LICENSE_ROW = require_team_access()
+TEAM_CODE = str(TEAM_CODE).strip().upper()
+
 def _load_team_cfg_from_file(team_code: str) -> dict:
     try:
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
