@@ -2213,71 +2213,38 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     end_col = ws.max_column
 
     if end_row >= start_row and end_col >= start_col:
-        # Apply formatting ONLY to stat columns.
-        # Heatmap should apply to all stat columns except GB% and FB% (if those columns exist).
+        start_cell = f"{get_column_letter(start_col)}{start_row}"
+        end_cell = f"{get_column_letter(end_col)}{end_row}"
+        data_range = f"{start_cell}:{end_cell}"
 
-        exclude_heat = {"GB%", "FB%"}
-
-        # --- gray out zeros across ALL numeric/stat columns (including % columns) ---
-        all_start_cell = f"{get_column_letter(start_col)}{start_row}"
-        all_end_cell = f"{get_column_letter(end_col)}{end_row}"
-        all_data_range = f"{all_start_cell}:{all_end_cell}"
-
+        # gray out zeros (relative formula so each cell checks itself)
         zero_fill = OPFill("solid", fgColor="EFEFEF")
         zero_rule = FormulaRule(
-            # relative formula: the top-left cell in the range will be shifted for each cell
             formula=[f"{get_column_letter(start_col)}{start_row}=0"],
             fill=zero_fill,
             stopIfTrue=True,
         )
-        ws.conditional_formatting.add(all_data_range, zero_rule)
-
-        # --- heatmap (per-column so we can exclude GB% / FB%) ---
+        ws.conditional_formatting.add(data_range, zero_rule)
+        # heatmap — apply to all stat columns EXCEPT GB% and FB%
         for col_idx, col_name in enumerate(df_season.columns, start=1):
-            if col_idx < start_col:
+            if col_name in ["Player", "GB%", "FB%"]:
                 continue
-            if str(col_name).strip() in exclude_heat:
-                continue
+            # only apply to numeric columns
+            try:
+                if col_name in df_season.columns and not pd.api.types.is_numeric_dtype(df_season[col_name]):
+                    continue
+            except Exception:
+                pass
+
             col_letter = get_column_letter(col_idx)
             col_range = f"{col_letter}{start_row}:{col_letter}{end_row}"
 
-            # Create a fresh rule per column (openpyxl can be picky about reusing rule instances)
-            col_heat_rule = ColorScaleRule(
+            heat_rule = ColorScaleRule(
                 start_type="num", start_value=1, start_color="FFFFFF",
                 mid_type="percentile", mid_value=50, mid_color="FFF2CC",
                 end_type="max", end_color="F8CBAD",
             )
-            ws.conditional_formatting.add(col_range, col_heat_rule)
-
-    # -----------------------------
-    # COACHES NOTES (Excel) — font size 12
-    # -----------------------------
-    try:
-        notes_title_row = ws.max_row + 2
-        notes_body_row = notes_title_row + 1
-        notes_end_row = notes_body_row + 7  # 7 lines of notes space
-
-        last_col_letter = get_column_letter(ws.max_column)
-
-        # Title
-        ws.merge_cells(f"A{notes_title_row}:{last_col_letter}{notes_title_row}")
-        title_cell = ws[f"A{notes_title_row}"]
-        title_cell.value = "COACHES NOTES"
-        title_cell.font = Font(bold=True, size=12)
-        title_cell.alignment = Alignment(horizontal="left", vertical="center")
-        ws.row_dimensions[notes_title_row].height = 18
-
-        # Body (merged rows)
-        for r in range(notes_body_row, notes_end_row + 1):
-            ws.merge_cells(f"A{r}:{last_col_letter}{r}")
-            c = ws[f"A{r}"]
-            c.value = ""  # blank writing space
-            c.font = Font(size=12)
-            c.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-            ws.row_dimensions[r].height = 18
-    except Exception:
-        # Notes are optional; never fail export if Excel formatting throws.
-        pass
+            ws.conditional_formatting.add(col_range, heat_rule)
 
     # highlight UNKNOWN > 0
     if "UNKNOWN" in df_season.columns:
@@ -2294,6 +2261,25 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         for cell in row:
             if isinstance(cell.value, (int, float)):
                 cell.alignment = num_align
+
+
+    # Coaches Notes — force font size 12 (header + body block if present)
+    notes_font = Font(size=12)
+    try:
+        header_cells = []
+        for r in ws.iter_rows():
+            for c in r:
+                if isinstance(c.value, str):
+                    v = c.value.strip().lower()
+                    if ("coach" in v) and ("note" in v):
+                        header_cells.append((c.row, c.column))
+        # If we find a "Coaches Notes" header, format a reasonable block under it.
+        for hr, hc in header_cells:
+            for rr in range(hr, min(hr + 40, ws.max_row + 1)):
+                for cc in range(hc, min(hc + 8, ws.max_column + 1)):
+                    ws.cell(row=rr, column=cc).font = notes_font
+    except Exception:
+        pass
 
     # Format pitching sheet (if present)
     if "df_pitching" in locals() and isinstance(df_pitching, pd.DataFrame) and not df_pitching.empty:
