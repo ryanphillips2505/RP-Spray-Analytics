@@ -220,6 +220,9 @@ def license_is_active(team_code: str) -> bool:
 def require_team_access():
     codes = load_team_codes()
 
+    # Local theme colors (access gate runs before global PRIMARY is defined)
+    primary = SETTINGS.get("primary_color", "#b91c1c")
+
     if "team_code" not in st.session_state:
         st.session_state.team_code = None
 
@@ -295,8 +298,8 @@ def require_team_access():
             font-weight: 900 !important;
             letter-spacing: 0.10em !important;
             text-transform: uppercase !important;
-            background: {PRIMARY} !important;
-            border: 1px solid {PRIMARY} !important;
+            background: {primary} !important;
+            border: 1px solid {primary} !important;
             color: #ffffff !important;
         }}
         #rp-login-card div[data-testid="stButton"] button:hover {{
