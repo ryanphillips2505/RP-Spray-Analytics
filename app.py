@@ -2282,170 +2282,247 @@ if no_season_data:
 else:
     df_xl = df_season[visible_cols].copy()
 
+
 out = BytesIO()
+
+# -----------------------------
+# SEASON REPORT (EXCEL) — PRINT-STYLE FORMATTING
+#   - Row 1: Team Name header (merged, 28pt)
+#   - Row 2: Column headers (12pt)
+#   - Rows 3+: Player rows (35 height, 12pt; Player bold)
+#   - GB/FB totals converted to percentages (GB% / FB%) and excluded from heatmap
+#   - Discrete "real heat map" bins for remaining numeric stats
+#   - Thick vertical borders separating GB block, FB block, RUN block
+#   - Watermark via print header
+# -----------------------------
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
 
-    # -----------------------------
-    # Title row (Row 1) + table (starts Row 2)
-    # -----------------------------
-    title_text = str(selected_team or "").strip() or "Season Report"
+    # Build export frame (keep all other stats numeric, convert GB/FB totals to % columns)
+    df_export = df_xl.copy() if df_xl is not None else pd.DataFrame()
 
-    # Write the dataframe starting on row 2 so row 1 can be a big header
-    df_xl.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
+    gb_col_name = "GB" if "GB" in df_export.columns else None
+    fb_col_name = "FB" if "FB" in df_export.columns else None
 
+    # Rename for presentation (Excel only)
+    if gb_col_name:
+        df_export = df_export.rename(columns={"GB": "GB%"})
+    if fb_col_name:
+        df_export = df_export.rename(columns={"FB": "FB%"})
+
+    # Write data starting at row 2 (we'll insert team header at row 1)
+    df_export.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
     ws = writer.book[sheet_name]
 
-    # Freeze just below the column headers (row 2)
+    # Team title row (Row 1)
+    total_cols = max(1, ws.max_column)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+    title_cell = ws.cell(row=1, column=1, value=str(selected_team))
+    title_cell.font = Font(bold=True, size=28)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Freeze panes below header row 2 (data starts row 3)
     ws.freeze_panes = "A3"
 
-    # -----------------------------
-    # Watermark (prints on paper/PDF export from Excel)
-    # -----------------------------
-    try:
-        ws.oddHeader.center.text = "&K9E9E9E&20RP Spray Analytics"
-        ws.oddHeader.center.size = 20
-        ws.oddHeader.center.font = "Arial,Bold"
-    except Exception:
-        pass
-
-    # -----------------------------
-    # Styles
-    # -----------------------------
-    title_font = Font(name="Arial", size=28, bold=True)
-    title_align = Alignment(horizontal="center", vertical="center")
-    header_font = Font(name="Arial", size=14, bold=True)
-    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    header_fill = PatternFill("solid", fgColor="D9E1F2")  # light blue-gray
-
-    player_font = Font(name="Arial", size=14, bold=True)
-    cell_font = Font(name="Arial", size=12, bold=False)
-    num_align = Alignment(horizontal="center", vertical="center")
-
     # Row heights
-    ws.row_dimensions[1].height = 35  # title row
-    ws.row_dimensions[2].height = 35  # header row
+    ws.row_dimensions[1].height = 35
+    ws.row_dimensions[2].height = 35
     for r in range(3, ws.max_row + 1):
         ws.row_dimensions[r].height = 35
 
-    # Title row merge across full width
-    max_col = ws.max_column if ws.max_column >= 1 else 1
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
-    tcell = ws.cell(row=1, column=1, value=title_text)
-    tcell.font = title_font
-    tcell.alignment = title_align
-
-    # Column header formatting (row 2)
+    # Header styling (Row 2)
+    header_font = Font(bold=True, size=12)
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
     for cell in ws[2]:
         cell.font = header_font
         cell.alignment = header_align
         cell.fill = header_fill
 
-    # Bold player names + font size 14 (Column A, data rows)
-    if ws.max_row >= 3:
+    # Player column formatting (bold, size 12) + autosize column A
+    player_col_idx = None
+    for j in range(1, ws.max_column + 1):
+        if str(ws.cell(row=2, column=j).value).strip() == "Player":
+            player_col_idx = j
+            break
+
+    body_font = Font(size=12)
+    player_font = Font(size=12, bold=True)
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+    for r in range(3, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            cell = ws.cell(row=r, column=c)
+            # Default body style
+            cell.font = body_font
+            cell.alignment = center_align
+            if player_col_idx and c == player_col_idx:
+                cell.font = player_font
+                cell.alignment = left_align
+
+    # Autosize Column A (Player) to fit names, with a sane cap
+    if player_col_idx:
+        max_len = len("Player")
+        try:
+            series = df_export["Player"].astype(str).tolist() if "Player" in df_export.columns else []
+            for v in series[:200]:
+                max_len = max(max_len, len(v))
+        except Exception:
+            pass
+        ws.column_dimensions[get_column_letter(player_col_idx)].width = min(max(max_len + 2, 12), 34)
+
+    # Percent columns: replace values with formulas based on original GB/FB totals
+    # We renamed columns to GB% / FB% above. We'll locate their indices in Excel.
+    gbp_idx = None
+    fbp_idx = None
+    for j in range(1, ws.max_column + 1):
+        v = str(ws.cell(row=2, column=j).value).strip()
+        if v == "GB%":
+            gbp_idx = j
+        elif v == "FB%":
+            fbp_idx = j
+
+    # The source totals are in df_xl columns GB/FB; we can compute via adjacent columns? easiest: use hidden helper cols? no.
+    # Instead, we keep the written numeric totals in the cells and convert them in-place:
+    # We'll read current cell values in row r for GB%/FB% (which are actually the totals) and replace with formulas using cell refs.
+    if gbp_idx and fbp_idx:
+        gb_letter = get_column_letter(gbp_idx)
+        fb_letter = get_column_letter(fbp_idx)
         for r in range(3, ws.max_row + 1):
-            c = ws.cell(row=r, column=1)
-            c.font = player_font
-            c.alignment = Alignment(horizontal="left", vertical="center")
+            gb_ref = f"{gb_letter}{r}"
+            fb_ref = f"{fb_letter}{r}"
+            # GB% formula
+            ws[gb_ref].value = f"=IF(({gb_ref}+{fb_ref})=0,0,{gb_ref}/({gb_ref}+{fb_ref}))"
+            ws[fb_ref].value = f"=IF(({gb_ref}+{fb_ref})=0,0,{fb_ref}/({gb_ref}+{fb_ref}))"
+            ws[gb_ref].number_format = "0%"
+            ws[fb_ref].number_format = "0%"
 
-    # Center numeric cells
-    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=2, max_col=ws.max_column):
-        for cell in row:
-            if isinstance(cell.value, (int, float)):
-                cell.alignment = num_align
-                cell.font = cell_font
-
-    # -----------------------------
-    # Column widths (Column A fits names)
-    # -----------------------------
-    # Column A: fit to player names
-    try:
-        max_name = 6
-        if not df_xl.empty and "Player" in df_xl.columns:
-            sample_names = df_xl["Player"].astype(str).tolist()
-            for nm in sample_names:
-                if nm:
-                    max_name = max(max_name, len(str(nm)))
-        ws.column_dimensions["A"].width = min(max(max_name + 2, 10), 34)
-    except Exception:
-        ws.column_dimensions["A"].width = 22
-
-    # Other columns: reasonable width based on header length
-    for col_idx, col_name in enumerate(list(df_xl.columns), start=1):
-        col_letter = get_column_letter(col_idx)
-        if col_letter == "A":
-            continue
-        base = len(str(col_name))
-        ws.column_dimensions[col_letter].width = min(max(base + 2, 8), 16)
-
-    # -----------------------------
-    # Thick separators between GB / FB / RUN groups
-    # -----------------------------
+    # Put a vertical border separating the percent columns from the other stats
+    # (thick line after FB% if present)
     thick_side = Side(style="thick", color="000000")
-
-    cols = list(df_xl.columns)
-    def _idxs(prefix):
-        return [i for i, c in enumerate(cols, start=1) if str(c).startswith(prefix)]
-
-    gb_cols = _idxs("GB")
-    fb_cols = _idxs("FB")
-
-    # Running group = SB/CS (and base buckets)
-    run_cols = [i for i, c in enumerate(cols, start=1) if str(c).startswith("SB") or str(c).startswith("CS")]
-
-    sep_after = []
-    if gb_cols:
-        sep_after.append(max(gb_cols))
-    if fb_cols:
-        sep_after.append(max(fb_cols))
-
-    # Apply thick RIGHT border to the separator columns for header+data
-    for sep_col in sep_after:
-        for r in range(2, ws.max_row + 1):  # header row 2 through data
-            cell = ws.cell(row=r, column=sep_col)
+    thin_side = Side(style="thin", color="9E9E9E")
+    def _set_right_thick(col_idx: int):
+        for r in range(2, ws.max_row + 1):
+            cell = ws.cell(row=r, column=col_idx)
             b = cell.border
             cell.border = Border(
-                left=b.left, right=thick_side, top=b.top, bottom=b.bottom,
-                diagonal=b.diagonal, diagonal_direction=b.diagonal_direction,
-                outline=b.outline, vertical=b.vertical, horizontal=b.horizontal
+                left=b.left or Side(style=None),
+                right=thick_side,
+                top=b.top or Side(style=None),
+                bottom=b.bottom or Side(style=None),
             )
 
+    if fbp_idx:
+        _set_right_thick(fbp_idx)
+
     # -----------------------------
-    # Conditional formatting + coach notes box (kept)
+    # THICK BORDERS separating GB / FB / RUN blocks
+    # We infer block boundaries from column names:
+    # - GB block: starts at first "GB-" and ends at last "GB-"
+    # - FB block: starts at first "FB-" and ends at last "FB-"
+    # - RUN block: starts at first "SB" or "CS" and goes to end
     # -----------------------------
-    start_row = 3  # data starts here
-    start_col = 2  # numeric starts after Player
-    end_row = ws.max_row
-    end_col = ws.max_column
+    headers = [str(ws.cell(row=2, column=j).value or "").strip() for j in range(1, ws.max_column + 1)]
 
-    if end_row >= start_row and end_col >= start_col:
-        start_cell = f"{get_column_letter(start_col)}{start_row}"
-        end_cell = f"{get_column_letter(end_col)}{end_row}"
-        data_range = f"{start_cell}:{end_cell}"
+    def _first_idx(prefixes):
+        for j, h in enumerate(headers, start=1):
+            for p in prefixes:
+                if h.startswith(p):
+                    return j
+        return None
 
-        # gray out zeros (relative formula so each cell checks itself)
-        zero_fill = PatternFill("solid", fgColor="EFEFEF")
-        zero_rule = FormulaRule(
-            formula=[f"{get_column_letter(start_col)}{start_row}=0"],
-            fill=zero_fill,
-            stopIfTrue=True,
-        )
-        if not no_season_data:
-            ws.conditional_formatting.add(data_range, zero_rule)
+    def _last_idx(prefixes):
+        last = None
+        for j, h in enumerate(headers, start=1):
+            for p in prefixes:
+                if h.startswith(p):
+                    last = j
+        return last
 
-        # heatmap
-        heat_rule = ColorScaleRule(
-            start_type="num", start_value=1, start_color="FFFFFF",
-            mid_type="percentile", mid_value=50, mid_color="FFF2CC",
-            end_type="max", end_color="F8CBAD",
-        )
-        ws.conditional_formatting.add(data_range, heat_rule)
+    gb_start = _first_idx(["GB-"])
+    gb_end   = _last_idx(["GB-"])
+    fb_start = _first_idx(["FB-"])
+    fb_end   = _last_idx(["FB-"])
+    run_start = _first_idx(["SB", "CS"])
+
+    # Thick separator after GB block and after FB block
+    if gb_end:
+        _set_right_thick(gb_end)
+    if fb_end:
+        _set_right_thick(fb_end)
+
+    # -----------------------------
+    # DISCRETE HEAT MAP for numeric stats (excluding Player and GB%/FB% columns)
+    # 0 = white (no fill)
+    # 1-5 light orange
+    # 6-10 darker orange
+    # 11-15 darker
+    # 16-19 darker
+    # >=20 red
+    # -----------------------------
+    from openpyxl.formatting.rule import CellIsRule
+
+    # Define fills
+    fill_1_5   = PatternFill("solid", fgColor="FFE5CC")
+    fill_6_10  = PatternFill("solid", fgColor="FFCC99")
+    fill_11_15 = PatternFill("solid", fgColor="FFB266")
+    fill_16_19 = PatternFill("solid", fgColor="FF9933")
+    fill_20p   = PatternFill("solid", fgColor="F8696B")  # red-ish
+
+    # Build a list of numeric columns to format
+    exclude_idxs = set()
+    if player_col_idx:
+        exclude_idxs.add(player_col_idx)
+    if gbp_idx:
+        exclude_idxs.add(gbp_idx)
+    if fbp_idx:
+        exclude_idxs.add(fbp_idx)
+
+    data_min_row = 3
+    data_max_row = ws.max_row
+
+    # Apply rules per column (clean + predictable)
+    for c in range(1, ws.max_column + 1):
+        if c in exclude_idxs:
+            continue
+        col_letter = get_column_letter(c)
+        rng = f"{col_letter}{data_min_row}:{col_letter}{data_max_row}"
+
+        # Highest first with stopIfTrue so bins don't overlap weirdly
+        ws.conditional_formatting.add(rng, CellIsRule(operator="greaterThanOrEqual", formula=["20"], fill=fill_20p, stopIfTrue=True))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["16", "19"], fill=fill_16_19, stopIfTrue=True))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["11", "15"], fill=fill_11_15, stopIfTrue=True))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["6", "10"], fill=fill_6_10, stopIfTrue=True))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["1", "5"], fill=fill_1_5, stopIfTrue=True))
+
+    # Watermark via print header (shows on print/PDF)
+    try:
+        ws.oddHeader.center.text = "RP Spray Analytics"
+        ws.oddHeader.center.font = "Tahoma,Bold"
+        ws.oddHeader.center.size = 14
+        ws.oddHeader.center.color = "808080"
+    except Exception:
+        pass
+
+    # Print setup (nice defaults)
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.35
+    ws.page_margins.bottom = 0.35
+    ws.page_margins.header = 0.15
+    ws.page_margins.footer = 0.15
+    ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
 
     # -----------------------------
     # COACH NOTES BOX (EXCEL)
     # -----------------------------
     if notes_box_text:
-        top_row = ws.max_row + 6  # 5 blank rows after the last player
+        top_row = ws.max_row + 6
         left_col = 1
         right_col = ws.max_column
         box_height = 10
@@ -2461,11 +2538,9 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         note_cell.value = f"COACH NOTES:\n\n{notes_box_text}"
         note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        # Make box rows taller
         for r in range(top_row, top_row + box_height):
             ws.row_dimensions[r].height = 22
 
-        # Thick border around perimeter
         thick = Side(style="thick")
         for r in range(top_row, top_row + box_height):
             for c in range(left_col, right_col + 1):
