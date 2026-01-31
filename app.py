@@ -145,6 +145,32 @@ def load_settings():
 
 
 SETTINGS = load_settings()
+
+# -----------------------------
+# BRAND STREAMLIT HEADER (POWER RED)
+# -----------------------------
+st.markdown(
+    f"""
+    <style>
+    header[data-testid="stHeader"] {{
+        background-color: {SETTINGS.get("primary_color", "#b91c1c")} !important;
+        height: 64px !important;
+        box-shadow: none !important;
+        border-bottom: none !important;
+    }}
+    header[data-testid="stHeader"] > div {{
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }}
+    .block-container {{
+        padding-top: 2rem !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 settings = SETTINGS  # alias so the rest of the code can use `settings`
 
 
@@ -238,10 +264,10 @@ def require_team_access():
                 return tc, _row
         # If TEAM_CODE isn't in the codes table, treat as not logged in
         st.session_state.team_code = None
-primary = SETTINGS.get("primary_color", "#b91c1c")
+    primary = SETTINGS.get("primary_color", "#b91c1c")
 
     # Professional login styling + brand the top chrome red (no fighting Streamlit)
-st.markdown(
+    st.markdown(
     f"""
         <style>
         /* Brand the Streamlit top chrome so the "oval" looks intentional */
@@ -1505,7 +1531,7 @@ with st.sidebar:
 
     # Daily quote card
     who, quote = get_daily_quote(HOF_QUOTES)
-st.markdown(
+    st.markdown(
     f"""
         <div style="
             padding: 14px;
@@ -2049,7 +2075,7 @@ if process_clicked:
 # Title row (tight)
 hdr_left, _hdr_right = st.columns([10, 1], vertical_alignment="center")
 with hdr_left:
-st.markdown(
+    st.markdown(
     f"""<h3 style='margin:0; padding:0;'>📔 Full Team Spray – SEASON TO DATE ({selected_team})</h3>""",
         unsafe_allow_html=True,
     )
