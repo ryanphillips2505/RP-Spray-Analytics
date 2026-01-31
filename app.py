@@ -157,23 +157,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown(
-    """
-    <style>
-    /* Remove Streamlit's default top header / spacer */
-    header[data-testid="stHeader"] {
-        display: none;
-    }
-
-    /* Reduce extra top padding */
-    .block-container {
-        padding-top: 1.5rem !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # ============================
 # ACCESS CODE GATE
 # ============================
@@ -243,46 +226,39 @@ def require_team_access():
     if "team_code" not in st.session_state:
         st.session_state.team_code = None
 
-    # If we need to clear the access code box, do it BEFORE the widget is created
-    if st.session_state.get("_clear_login_access_code"):
-        st.session_state["login_access_code"] = ""
-        st.session_state["_clear_login_access_code"] = False
-
     # Already logged in
     if st.session_state.team_code in codes:
         return st.session_state.team_code, codes[st.session_state.team_code]
 
-    # ---------- Professional, compact login UI ----------
+    # ---------- Professional login UI ----------
     st.markdown(
         f"""
         <style>
+        /* Remove Streamlit top chrome + reclaim whitespace on login page */
+        header[data-testid="stHeader"] {{ display: none !important; height: 0 !important; }}
+        div[data-testid="stToolbar"] {{ display: none !important; height: 0 !important; }}
+        div[data-testid="stDecoration"] {{ display: none !important; height: 0 !important; }}
+        div[data-testid="stStatusWidget"] {{ display: none !important; height: 0 !important; }}
+        #MainMenu {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
 
-        /* Hide Streamlit top chrome (removes the white header space/oval) */
-        header[data-testid="stHeader"] { display: none !important; }
-        [data-testid="stAppHeader"] { display: none !important; }
-        [data-testid="stTopNav"] { display: none !important; }
-        [data-testid="stToolbar"] { display: none !important; }
-        [data-testid="stDecoration"] { display: none !important; }
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
-
-        /* Reduce Streamlit default top/bottom whitespace on this gate page */
-        [data-testid="stAppViewContainer"] .block-container,
-        section.main .block-container,
-        .main .block-container {{
-            padding-top: 0rem !important;
-            padding-bottom: 0.8rem !important;
-            max-width: 1100px !important;
+        /* Tighten container padding */
+        html, body, [data-testid="stAppViewContainer"] {{ padding-top: 0 !important; margin-top: 0 !important; }}
+        section.main > div.block-container,
+        [data-testid="stAppViewContainer"] .block-container {{
+            padding-top: 0.25rem !important;
+            padding-bottom: 1rem !important;
+            max-width: 980px !important;
         }}
 
+        /* Card */
         .rp-login-card {{
             width: 100%;
             padding: 22px 22px 18px 22px;
             border-radius: 16px;
-            background: rgba(255,255,255,0.82);
+            background: rgba(255,255,255,0.86);
             border: 1px solid rgba(17,24,39,0.14);
             box-shadow: 0 10px 28px rgba(0,0,0,0.10);
-            backdrop-filter: blur(6px);
         }}
         .rp-login-title {{
             font-weight: 900;
@@ -320,6 +296,7 @@ def require_team_access():
             text-transform: uppercase !important;
             background: {primary} !important;
             border: 1px solid {primary} !important;
+            color: #ffffff !important;
         }}
         div[data-testid="stButton"] button[kind="primary"]:hover {{
             filter: brightness(0.95) !important;
@@ -333,13 +310,12 @@ def require_team_access():
         unsafe_allow_html=True,
     )
 
-    # Center the card with columns (no weird flex spacing)
-    left, mid, right = st.columns([1, 2, 1])
+    # Center the card using columns (stable across Streamlit versions)
+    left, mid, right = st.columns([1, 1.2, 1])
     with mid:
         st.markdown('<div class="rp-login-card">', unsafe_allow_html=True)
-
         st.markdown(
-            f"<div class='rp-login-title'>{SETTINGS.get('app_title','RP Spray Analytics')}</div>",
+            f"<div class='rp-login-title'>{SETTINGS.get('app_title', 'RP Spray Analytics')}</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -349,19 +325,18 @@ def require_team_access():
 
         code_raw = st.text_input(
             "Access Code",
+            value=st.session_state.get("login_access_code", ""),
             placeholder="ACCESS CODE",
             label_visibility="collapsed",
             type="password",
             key="login_access_code",
         )
 
-        login_clicked = st.button("Unlock", type="primary", use_container_width=True)
+        login_clicked = st.button("UNLOCK", type="primary", use_container_width=True)
 
         st.caption("Need help? Contact your administrator.")
-
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------- Same logic as before ----------
     if login_clicked:
         code = (code_raw or "").strip().upper()
 
@@ -380,7 +355,6 @@ def require_team_access():
                     st.stop()
 
                 st.session_state.team_code = team_code
-                st.session_state["_clear_login_access_code"] = True
                 st.rerun()
             else:
                 st.error("Invalid access code.")
