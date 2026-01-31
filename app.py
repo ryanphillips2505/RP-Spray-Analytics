@@ -2453,24 +2453,21 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         _set_right_thick(fb_end)
 
     # -----------------------------
-    # DISCRETE HEAT MAP for numeric stats (excluding Player and GB%/FB% columns)
-    # 0 = white (no fill)
+    # STATIC HEAT MAP (fills cells so it shows in previews/prints too)
+    # Applies to all numeric stats except Player, GB%, FB%
+    # 0 = no fill
     # 1-5 light orange
     # 6-10 darker orange
     # 11-15 darker
     # 16-19 darker
     # >=20 red
     # -----------------------------
-    from openpyxl.formatting.rule import CellIsRule
-
-    # Define fills
     fill_1_5   = PatternFill("solid", fgColor="FFE5CC")
     fill_6_10  = PatternFill("solid", fgColor="FFCC99")
     fill_11_15 = PatternFill("solid", fgColor="FFB266")
     fill_16_19 = PatternFill("solid", fgColor="FF9933")
     fill_20p   = PatternFill("solid", fgColor="F8696B")  # red-ish
 
-    # Build a list of numeric columns to format
     exclude_idxs = set()
     if player_col_idx:
         exclude_idxs.add(player_col_idx)
@@ -2482,23 +2479,37 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     data_min_row = 3
     data_max_row = ws.max_row
 
-    # Apply rules per column (clean + predictable)
-    # Guard: if there are no data rows yet (only headers), skip heatmap to avoid invalid ranges.
-    if data_max_row >= data_min_row:
+    for r in range(data_min_row, data_max_row + 1):
         for c in range(1, ws.max_column + 1):
             if c in exclude_idxs:
                 continue
-            col_letter = get_column_letter(c)
-            rng = f"{col_letter}{data_min_row}:{col_letter}{data_max_row}"
 
-            # Highest first with stopIfTrue so bins don't overlap weirdly
-            ws.conditional_formatting.add(rng, CellIsRule(operator="greaterThanOrEqual", formula=["20"], fill=fill_20p, stopIfTrue=True))
-            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["16", "19"], fill=fill_16_19, stopIfTrue=True))
-            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["11", "15"], fill=fill_11_15, stopIfTrue=True))
-            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["6", "10"], fill=fill_6_10, stopIfTrue=True))
-            ws.conditional_formatting.add(rng, CellIsRule(operator="between", formula=["1", "5"], fill=fill_1_5, stopIfTrue=True))
+            cell = ws.cell(row=r, column=c)
+            v = cell.value
 
-    # Watermark via print header (shows on print/PDF)
+            # Coerce to number (skip text/blanks)
+            try:
+                if v is None or v == "":
+                    continue
+                if isinstance(v, bool):
+                    continue
+                v_num = float(v)
+            except Exception:
+                continue
+
+            if v_num <= 0:
+                continue
+            elif v_num >= 20:
+                cell.fill = fill_20p
+            elif 16 <= v_num <= 19:
+                cell.fill = fill_16_19
+            elif 11 <= v_num <= 15:
+                cell.fill = fill_11_15
+            elif 6 <= v_num <= 10:
+                cell.fill = fill_6_10
+            elif 1 <= v_num <= 5:
+                cell.fill = fill_1_5
+# Watermark via print header (shows on print/PDF)
     try:
         ws.oddHeader.center.text = "RP Spray Analytics"
         ws.oddHeader.center.font = "Tahoma,Bold"
