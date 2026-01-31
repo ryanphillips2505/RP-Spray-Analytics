@@ -152,7 +152,37 @@ settings = SETTINGS  # alias so the rest of the code can use `settings`
 # ✅ MUST BE FIRST STREAMLIT CALL
 # -----------------------------
 st.set_page_config(
-    page_title=SETTINGS.get("app_title", "RP Spray Charts"),
+    page_title=SETTINGS.get("app_title", "RP Spray Charts")
+
+
+st.markdown(
+    f"""
+    <style>
+    /* Brand Streamlit top header (Power Red) */
+    header[data-testid="stHeader"] {
+        background: {SETTINGS.get("primary_color", "#b91c1c")} !important;
+        height: 64px !important;
+        box-shadow: none !important;
+        border-bottom: none !important;
+    }
+
+    /* Remove extra padding inside header */
+    header[data-testid="stHeader"] > div {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    /* Pull main content closer to header */
+    .block-container {
+        padding-top: 2rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+,
     page_icon="⚾",
     layout="wide",
 )
@@ -240,88 +270,6 @@ def require_team_access():
         """
         <style>
 /* --- Hide Streamlit top chrome (header/toolbar/status) to remove the white oval --- */
-header[data-testid="stHeader"] { display: none !important; }
-div[data-testid="stToolbar"] { display: none !important; }
-div[data-testid="stDecoration"] { display: none !important; }
-div[data-testid="stStatusWidget"] { display: none !important; }
-#MainMenu { visibility: hidden !important; }
-footer { visibility: hidden !important; }
-
-/* Tighten page top padding that Streamlit adds */
-section.main > div { padding-top: 0.75rem !important; }
-.block-container { padding-top: 0.75rem !important; }
-
-
-        /* Remove Streamlit top chrome + reclaim whitespace on login page */
-        header[data-testid="stHeader"] { display: none !important; height: 0 !important; }
-        div[data-testid="stToolbar"] { display: none !important; height: 0 !important; }
-        div[data-testid="stDecoration"] { display: none !important; height: 0 !important; }
-        div[data-testid="stStatusWidget"] { display: none !important; height: 0 !important; }
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
-
-        /* Tighten container padding */
-        html, body, [data-testid="stAppViewContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
-        section.main > div.block-container,
-        [data-testid="stAppViewContainer"] .block-container {
-            padding-top: 0.35rem !important;
-            padding-bottom: 1.0rem !important;
-            max-width: 980px !important;
-        }
-
-        /* Card */
-        .rp-login-card {
-            width: 100%;
-            padding: 22px 22px 18px 22px;
-            border-radius: 16px;
-            background: rgba(255,255,255,0.86);
-            border: 1px solid rgba(17,24,39,0.14);
-            box-shadow: 0 10px 28px rgba(0,0,0,0.10);
-        }
-        .rp-login-title {
-            font-weight: 900;
-            font-size: 1.35rem;
-            letter-spacing: 0.10em;
-            text-transform: uppercase;
-            margin: 0 0 6px 0;
-            color: rgba(17,24,39,0.92);
-        }
-        .rp-login-sub {
-            margin: 0 0 14px 0;
-            font-weight: 700;
-            font-size: 0.95rem;
-            color: rgba(17,24,39,0.70);
-            line-height: 1.35;
-        }
-
-        /* Input polish */
-        [data-testid="stTextInput"] input {
-            border-radius: 12px !important;
-            padding: 0.70rem 0.90rem !important;
-            border: 1px solid rgba(17,24,39,0.22) !important;
-            font-weight: 800 !important;
-            letter-spacing: 0.12em !important;
-            text-transform: uppercase !important;
-        }
-
-        /* Button polish */
-        div[data-testid="stButton"] button.rp-login-btn {
-            width: 100%;
-            border-radius: 12px !important;
-            padding: 0.75rem 1rem !important;
-            font-weight: 900 !important;
-            letter-spacing: 0.14em !important;
-            text-transform: uppercase !important;
-            background: """ + primary + r""" !important;
-            border: 1px solid """ + primary + r""" !important;
-            color: #ffffff !important;
-        }
-        div[data-testid="stButton"] button.rp-login-btn:hover {
-            filter: brightness(0.96) !important;
-        }
-
-        [data-testid="stAlert"] { border-radius: 12px !important; }
-        </style>
         """,
         unsafe_allow_html=True,
     )
@@ -2786,6 +2734,44 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
