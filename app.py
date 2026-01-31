@@ -253,8 +253,8 @@ def require_team_access():
         <style>
         /* Reduce Streamlit default top/bottom whitespace on this gate page */
         [data-testid="stAppViewContainer"] .block-container {{
-            padding-top: 2.2rem !important;
-            padding-bottom: 2.2rem !important;
+            padding-top: 0.8rem !important;
+            padding-bottom: 0.8rem !important;
             max-width: 1100px !important;
         }}
 
@@ -332,10 +332,10 @@ def require_team_access():
 
         code_raw = st.text_input(
             "Access Code",
-            value="",
             placeholder="ACCESS CODE",
             label_visibility="collapsed",
             type="password",
+            key="login_access_code",
         )
 
         login_clicked = st.button("Unlock", type="primary", use_container_width=True)
@@ -363,6 +363,7 @@ def require_team_access():
                     st.stop()
 
                 st.session_state.team_code = team_code
+                st.session_state["login_access_code"] = ""
                 st.rerun()
             else:
                 st.error("Invalid access code.")
