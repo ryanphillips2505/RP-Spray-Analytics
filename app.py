@@ -220,7 +220,7 @@ def license_is_active(team_code: str) -> bool:
 def require_team_access():
     codes = load_team_codes()
 
-    # Local theme colors (access gate runs before global PRIMARY is defined)
+    # Local theme color (access gate runs before global PRIMARY is defined)
     primary = SETTINGS.get("primary_color", "#b91c1c")
 
     if "team_code" not in st.session_state:
@@ -230,84 +230,68 @@ def require_team_access():
     if st.session_state.team_code in codes:
         return st.session_state.team_code, codes[st.session_state.team_code]
 
-    # ---------- Professional Login UI (centered card) ----------
+    # ---------- Professional, compact login UI ----------
     st.markdown(
         f"""
         <style>
-        /* Center the login card */
-        #rp-login-wrap {{
-            min-height: 68vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        /* Reduce Streamlit default top/bottom whitespace on this gate page */
+        [data-testid="stAppViewContainer"] .block-container {{
+            padding-top: 2.2rem !important;
+            padding-bottom: 2.2rem !important;
+            max-width: 1100px !important;
         }}
-        #rp-login-card {{
-            width: min(560px, 92vw);
-            padding: 26px 24px 22px 24px;
-            border-radius: 18px;
-            background: rgba(255,255,255,0.78);
+
+        .rp-login-card {{
+            width: 100%;
+            padding: 22px 22px 18px 22px;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.82);
             border: 1px solid rgba(17,24,39,0.14);
-            box-shadow: 0 14px 40px rgba(0,0,0,0.10);
+            box-shadow: 0 10px 28px rgba(0,0,0,0.10);
             backdrop-filter: blur(6px);
         }}
-        #rp-login-title {{
+        .rp-login-title {{
             font-weight: 900;
-            font-size: 1.55rem;
+            font-size: 1.35rem;
             letter-spacing: 0.06em;
             text-transform: uppercase;
             margin: 0 0 6px 0;
             color: rgba(17,24,39,0.92);
         }}
-        #rp-login-sub {{
+        .rp-login-sub {{
             margin: 0 0 14px 0;
             font-weight: 700;
             font-size: 0.95rem;
             color: rgba(17,24,39,0.70);
             line-height: 1.35;
         }}
-        .rp-login-pill {{
-            display: inline-block;
-            padding: 6px 10px;
-            border-radius: 999px;
-            background: rgba(17,24,39,0.06);
-            border: 1px solid rgba(17,24,39,0.12);
-            font-size: 0.74rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: rgba(17,24,39,0.80);
-            margin-right: 8px;
-            margin-top: 6px;
-        }}
 
-        /* Input polish (scoped to login card) */
-        #rp-login-card [data-testid="stTextInput"] input {{
+        /* Access code input */
+        [data-testid="stTextInput"] input {{
             border-radius: 12px !important;
-            padding: 0.65rem 0.85rem !important;
+            padding: 0.70rem 0.90rem !important;
             border: 1px solid rgba(17,24,39,0.20) !important;
             font-weight: 800 !important;
             letter-spacing: 0.10em !important;
             text-transform: uppercase !important;
         }}
 
-        /* Button polish (scoped to login card) */
-        #rp-login-card div[data-testid="stButton"] button {{
-            width: 100%;
+        /* Primary button */
+        div[data-testid="stButton"] button[kind="primary"] {{
+            width: 100% !important;
             border-radius: 12px !important;
-            padding: 0.70rem 1rem !important;
+            padding: 0.75rem 1rem !important;
             font-weight: 900 !important;
             letter-spacing: 0.10em !important;
             text-transform: uppercase !important;
             background: {primary} !important;
             border: 1px solid {primary} !important;
-            color: #ffffff !important;
         }}
-        #rp-login-card div[data-testid="stButton"] button:hover {{
+        div[data-testid="stButton"] button[kind="primary"]:hover {{
             filter: brightness(0.95) !important;
         }}
 
-        /* Alerts look cleaner */
-        #rp-login-card [data-testid="stAlert"] {{
+        [data-testid="stAlert"] {{
             border-radius: 12px !important;
         }}
         </style>
@@ -315,42 +299,33 @@ def require_team_access():
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div id="rp-login-wrap"><div id="rp-login-card">', unsafe_allow_html=True)
+    # Center the card with columns (no weird flex spacing)
+    left, mid, right = st.columns([1, 2, 1])
+    with mid:
+        st.markdown('<div class="rp-login-card">', unsafe_allow_html=True)
 
-    st.markdown(
-        f'<div id="rp-login-title">{SETTINGS.get("app_title","RP Spray Analytics")}</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div id="rp-login-sub">Enter your team access code to continue.</div>',
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            f"<div class='rp-login-title'>{SETTINGS.get('app_title','RP Spray Analytics')}</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='rp-login-sub'>Enter your team access code to continue.</div>",
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        '''
-        <span class="rp-login-pill">Secure Access</span>
-        <span class="rp-login-pill">Team Licensed</span>
-        <span class="rp-login-pill">Supabase Sync</span>
-        ''',
-        unsafe_allow_html=True,
-    )
+        code_raw = st.text_input(
+            "Access Code",
+            value="",
+            placeholder="ACCESS CODE",
+            label_visibility="collapsed",
+            type="password",
+        )
 
-    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        login_clicked = st.button("Unlock", type="primary", use_container_width=True)
 
-    code_raw = st.text_input(
-        "Access Code",
-        value="",
-        placeholder="ACCESS CODE",
-        label_visibility="collapsed",
-        type="password",
-    )
+        st.caption("Need help? Contact your administrator.")
 
-    login_clicked = st.button("Unlock", use_container_width=True)
-
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    st.caption("Having trouble? Contact your administrator for licensing or access support.")
-
-    st.markdown("</div></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # ---------- Same logic as before ----------
     if login_clicked:
