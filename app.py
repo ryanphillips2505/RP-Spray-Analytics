@@ -504,7 +504,7 @@ RIGHT_SIDE_PATTERNS = [
 ]
 
 # -----------------------------
-# RUNNING EVENTS (SB / CS / DI) — PICKOFFS REMOVED + FIXED
+# RUNNING EVENTS (SB / CS) — PICKOFFS + DI REMOVED
 # -----------------------------
 SB_ACTION_REGEX = re.compile(
     r"""
@@ -527,29 +527,6 @@ CS_ACTION_REGEX = re.compile(
     re.IGNORECASE | re.VERBOSE
 )
 
-DI_REGEX_1 = re.compile(
-    r"""
-    \bdefensive\s+indifference\b
-    .*?
-    \b(?:to|advances?\s+to|takes)\b
-    (?:\s+base)?
-    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
-
-DI_REGEX_2 = re.compile(
-    r"""
-    \b(?:to|advances?\s+to|takes)\b
-    (?:\s+base)?
-    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
-    .*?
-    \bdefensive\s+indifference\b
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
-
-DI_REGEX_BARE = re.compile(r"\bdefensive\s+indifference\b", re.IGNORECASE)
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
 
@@ -669,16 +646,6 @@ def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str
         base_key = normalize_base_bucket("CS", base_raw)
         runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
         return runner, "CS", base_key
-
-    m = DI_REGEX_1.search(clean_line) or DI_REGEX_2.search(clean_line)
-    if m:
-        base_key = normalize_base_bucket("DI", m.group(1) if (m.lastindex or 0) >= 1 else None)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "DI", base_key
-
-    if DI_REGEX_BARE.search(clean_line):
-        runner = extract_runner_name_fallback(clean_line, roster)
-        return runner, "DI", "DI"
 
     return None, None, None
 
@@ -1981,18 +1948,23 @@ else:
 for player in display_players:
     stats = season_players[player]
     row = {"Player": player}
-    for loc in LOCATION_KEYS:
-        row[loc] = stats.get(loc, 0)
+
+    # Totals
     row["GB"] = stats.get("GB", 0)
     row["FB"] = stats.get("FB", 0)
+
+    # GB/FB by position (keep)
     for ck in COMBO_KEYS:
         row[ck] = stats.get(ck, 0)
+
+    # Baserunning (keep)
     for rk in RUN_KEYS:
         row[rk] = stats.get(rk, 0)
+
     season_rows.append(row)
 
 df_season = pd.DataFrame(season_rows)
-col_order = (["Player"] + LOCATION_KEYS + ["GB", "FB"] + COMBO_KEYS + RUN_KEYS)
+col_order = (["Player"] + ["GB", "FB"] + COMBO_KEYS + RUN_KEYS)
 # If no rows yet, preserve the expected columns so Stat Edit can still work
 if df_season.empty and len(df_season.columns) == 0:
     df_season = pd.DataFrame(columns=col_order)
@@ -2364,15 +2336,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         )
         ws.conditional_formatting.add(data_range, heat_rule)
 
-    # highlight UNKNOWN > 0 (only if there are data rows)
-    if end_row >= start_row and "UNKNOWN" in df_xl.columns:
-        unk_idx = list(df_xl.columns).index("UNKNOWN") + 1
-        unk_col = get_column_letter(unk_idx)
-        unk_range = f"{unk_col}{start_row}:{unk_col}{end_row}"
-        unk_fill = PatternFill("solid", fgColor="FFC7CE")
-        unk_rule = CellIsRule(operator="greaterThan", formula=["0"], fill=unk_fill)
-        ws.conditional_formatting.add(unk_range, unk_rule)
-
     # center numbers
     num_align = Alignment(horizontal="center", vertical="center")
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
@@ -2436,399 +2399,6 @@ with col_dl2:
         file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
         mime="text/csv",
     )
-
-st.subheader(f"🎯 Individual Spray – SEASON TO DATE ({selected_team})")
-
-# ✅ Individual archived toggle (separate from season table)
-indiv_show_archived = st.checkbox(
-    "Show archived players (not on current roster) — Individual",
-    value=False,
-    key=f"indiv_show_archived__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}",
-)
-
-# ✅ Candidate list for individual picker (include 0-stat players)
-if indiv_show_archived:
-    indiv_candidates = sorted(set(active_players + archived_list))
-else:
-    indiv_candidates = list(active_players)
-
-selectable_players = list(indiv_candidates)
-
-# -----------------------------
-# INDIV STAT LIST + STAT EDIT
-# -----------------------------
-INDIV_TYPES = []
-INDIV_TYPES += list(LOCATION_KEYS)
-INDIV_TYPES += ["GB (total)", "FB (total)"]
-INDIV_TYPES += list(COMBO_KEYS)
-
-# running events (include SB/CS/DI + base-specific run keys)
-INDIV_TYPES += ["SB", "CS", "DI"]
-for _rk in RUN_KEYS:
-    if _rk not in INDIV_TYPES:
-        INDIV_TYPES.append(_rk)
-
-# de-dupe while preserving order
-_seen = set()
-INDIV_TYPES = [x for x in INDIV_TYPES if not (x in _seen or _seen.add(x))]
-
-indiv_key = f"indiv_types__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}"
-if indiv_key not in st.session_state:
-    st.session_state[indiv_key] = list(INDIV_TYPES)
-
-if not selectable_players:
-    st.info("No hitters found for this roster yet.")
-else:
-    # Tight row: hitter select (left) + Stat Edit (right)
-    i_left, i_right = st.columns([8, 2])
-    with i_left:
-        selected_player = st.selectbox("Choose a hitter:", selectable_players, key=f"indiv_player__{TEAM_CODE}__{re.sub(r'[^A-Za-z0-9_]+','_', selected_team)}")
-
-    with i_right:
-        if hasattr(st, "popover"):
-            _stat_edit_container = st.popover("Stat Edit")
-        else:
-            _stat_edit_container = st.expander("Stat Edit", expanded=False)
-
-        with _stat_edit_container:
-            st.caption("Toggle which stats show in the individual table + downloads")
-            flt = st.text_input("Search", value="", placeholder="Type to filter stats...", key=f"{indiv_key}__flt")
-
-            b1, b2, b3 = st.columns([1, 1, 2])
-            with b1:
-                all_clicked = st.button("All", key=f"{indiv_key}__all", use_container_width=True)
-            with b2:
-                none_clicked = st.button("None", key=f"{indiv_key}__none", use_container_width=True)
-            with b3:
-                st.caption(" ")
-
-            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
-            if all_clicked or none_clicked:
-                for _t in INDIV_TYPES:
-                    _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_t))
-                    st.session_state[f"{indiv_key}__cb__{_safe}"] = True if all_clicked else False
-                st.session_state[indiv_key] = list(INDIV_TYPES) if all_clicked else []
-                st.rerun()
-
-            picked_set = set(st.session_state.get(indiv_key, []))
-
-            view_types = INDIV_TYPES
-            if flt.strip():
-                q = flt.strip().lower()
-                view_types = [t for t in INDIV_TYPES if q in str(t).lower()]
-
-            colA, colB, colC = st.columns(3)
-            grid = [colA, colB, colC]
-            for i, t in enumerate(view_types):
-                target = grid[i % 3]
-                safe_t = re.sub(r"[^A-Za-z0-9_]+", "_", str(t))
-                cur_val = st.session_state.get(f"{indiv_key}__cb__{safe_t}", t in picked_set)
-                new_val = target.checkbox(str(t), value=cur_val, key=f"{indiv_key}__cb__{safe_t}")
-                if new_val:
-                    picked_set.add(t)
-                else:
-                    picked_set.discard(t)
-
-            st.session_state[indiv_key] = [t for t in INDIV_TYPES if t in picked_set]
-
-    # Current individual view types
-    indiv_types_selected = st.session_state.get(indiv_key, list(INDIV_TYPES))
-    if not indiv_types_selected:
-        st.warning("No stats selected. Use Stat Edit to choose at least one stat.")
-        indiv_types_selected = list(INDIV_TYPES)
-
-    # -----------------------------
-    # DISPLAY (selected player)
-    # -----------------------------
-    stats = season_players[selected_player]
-    indiv_rows = []
-    for t in indiv_types_selected:
-        if t == "GB (total)":
-            indiv_rows.append({"Type": t, "Count": stats.get("GB", 0)})
-        elif t == "FB (total)":
-            indiv_rows.append({"Type": t, "Count": stats.get("FB", 0)})
-        else:
-            indiv_rows.append({"Type": t, "Count": stats.get(t, 0)})
-
-    st.table(indiv_rows)
-
-    # -----------------------------
-    # DOWNLOADS (match Stat Edit)
-    #   - Excel: one sheet per player
-    #   - CSV: long format (Player, Type, Count)
-    # -----------------------------
-    dl_a, dl_b = st.columns([1, 1])
-    safe_team_ind = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
-
-    def _sheet_name(name: str) -> str:
-        # Excel sheet name max = 31, cannot contain : \ / ? * [ ]
-        s = re.sub(r"[:\\/\?\*\[\]]+", " ", str(name)).strip()
-        s = re.sub(r"\s+", " ", s)
-        return s[:31] if s else "Player"
-
-    # Excel bytes (one sheet per player)
-    excel_out = BytesIO()
-    with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
-        # Load per-player notes (stored as JSON string in session_state / DB meta)
-        _pn_key = f"player_notes__{TEAM_CODE_SAFE}__{team_key}"
-        try:
-            _player_notes_dict = json.loads(st.session_state.get(_pn_key, "") or "{}")
-            if not isinstance(_player_notes_dict, dict):
-                _player_notes_dict = {}
-        except Exception:
-            _player_notes_dict = {}
-        used = set()
-
-        # Safety: openpyxl requires at least one visible sheet
-        if not selectable_players:
-            pd.DataFrame().to_excel(writer, index=False, sheet_name="Player")
-            ws = writer.book["Player"]
-            ws["A1"].value = "No players available for Individual Spray export."
-            used.add("Player")
-        for p in selectable_players:
-            st_p = season_players.get(p, {})
-            sn = _sheet_name(p)
-
-            base = sn
-            k = 1
-            while sn in used:
-                suffix = f"_{k}"
-                sn = (base[:31 - len(suffix)] + suffix) if len(base) + len(suffix) > 31 else (base + suffix)
-                k += 1
-            used.add(sn)
-
-            # Create an empty sheet (we write cells manually for a clean, MLB-style layout)
-            pd.DataFrame().to_excel(writer, index=False, sheet_name=sn)
-            ws = writer.book[sn]
-            # Local styles for notes + stat split (avoid NameError due to ordering)
-            FONT_NAME = "Arial"  # Excel-safe font
-            _thin = Side(style="thin", color="9E9E9E")
-            _border = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
-            _notes_fill = PatternFill("solid", fgColor="D9EAD3")  # light green
-            _header_fill = PatternFill("solid", fgColor="D9E1F2")  # light blue-gray
-            _header_font = Font(name=FONT_NAME, size=12, bold=True)
-            _small_font = Font(name=FONT_NAME, size=11)
-
-            # Coaches Notes (per player) — printable, saved into Excel
-            # Header row
-            ws.merge_cells("A3:B3")
-            ws["A3"].value = "Coaches Notes"
-            for c in range(1, 3):
-                cell = ws.cell(row=3, column=c)
-                cell.font = _header_font
-                cell.fill = _header_fill
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = _border
-
-            player_note_text = _player_notes_dict.get(p, "")
-            # Body (editable note text)
-            ws.merge_cells("A4:B10")
-            ws["A4"].value = player_note_text or ""
-            for r in range(4, 11):
-                for c in range(1, 3):
-                    cell = ws.cell(row=r, column=c)
-                    cell.font = _small_font
-                    cell.fill = PatternFill("solid", fgColor="FFFFFF")
-                    cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                    cell.border = _border
-            ws["A2"].value = "GB / FB by position"
-            ws["A2"].font = _header_font
-            ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
-
-                        # (Removed) Selected Stat Totals split-table — replaced below with SB/CS + coach worksheet block
-
-            FIELD_TOP_ROW = 2
-            FIELD_LEFT_COL = 3   # Column C
-            FIELD_RIGHT_COL = 12 # Column L
-            FIELD_BOTTOM_ROW = 11
-
-            # Colors / styles
-            title_font = Font(name=FONT_NAME, size=16, bold=True)
-            hdr_font = Font(name=FONT_NAME, size=11, bold=True)
-            cell_font = Font(name=FONT_NAME, size=11, bold=False)
-            small_font = Font(name=FONT_NAME, size=10, color='444444')
-            gbfb_font = Font(name=FONT_NAME, size=11, bold=True)
-            gray_fill = PatternFill("solid", fgColor="F2F2F2")
-            grass_fill = PatternFill("solid", fgColor="D9EAD3")  # lighter green
-            white_fill = PatternFill("solid", fgColor="FFFFFF")
-            thin = Side(style="thin", color="9E9E9E")
-            box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-            # Title row
-            ws.merge_cells(start_row=1, start_column=3, end_row=1, end_column=12)
-            ws.cell(row=1, column=3, value=f"Individual Spray Summary — {p}").font = title_font
-            ws.cell(row=1, column=3).alignment = Alignment(horizontal="center", vertical="center")
-
-            # Section label
-            ws.cell(row=2, column=1, value="GB / FB by position").font = hdr_font
-            ws.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
-
-            # Field background
-            for r in range(FIELD_TOP_ROW, FIELD_BOTTOM_ROW + 1):
-                for c in range(FIELD_LEFT_COL, FIELD_RIGHT_COL + 1):
-                    cell = ws.cell(row=r, column=c)
-                    cell.fill = grass_fill
-                    # keep background clean (no borders on grass)
-                    cell.border = Border()
-
-            # Column widths tuned for PORTRAIT 1-page print (clean + "MLB" look)
-            ws.column_dimensions[get_column_letter(col_atbat)].width = 6.0
-            for _c in range(col_result_start, col_result_end+1):
-                ws.column_dimensions[get_column_letter(_c)].width = 11.0
-            for _c in range(col_grid_start, col_grid_end+1):
-                ws.column_dimensions[get_column_letter(_c)].width = 2.0
-            ws.column_dimensions[get_column_letter(col_count)].width = 7.0
-            for _c in range(col_notes_start, col_notes_end+1):
-                ws.column_dimensions[get_column_letter(_c)].width = 13.0
-
-
-            thick = Side(style="medium", color="000000")
-            thin_black = Side(style="thin", color="000000")
-
-            # Clear any leftover content in the AB-table area (prevents old stat lists from showing)
-            for rr in range(start_row, start_row + 40):
-                for cc in range(col_atbat, col_notes_end + 1):
-                    ws.cell(rr, cc, "")
-                    ws.cell(rr, cc).border = Border()
-                    ws.cell(rr, cc).fill = PatternFill(fill_type=None)
-
-            def _set_border_range(r1, c1, r2, c2):
-                for rr in range(r1, r2+1):
-                    for cc in range(c1, c2+1):
-                        left = thick if cc == c1 else thin_black
-                        right = thick if cc == c2 else thin_black
-                        top = thick if rr == r1 else thin_black
-                        bottom = thick if rr == r2 else thin_black
-                        ws.cell(rr, cc).border = Border(left=left, right=right, top=top, bottom=bottom)
-
-            hdr_r = start_row
-            ws.cell(hdr_r, col_atbat, "AT BAT #").font = _header_font2
-            ws.cell(hdr_r, col_atbat).alignment = _header_align2
-
-            ws.merge_cells(start_row=hdr_r, start_column=col_result_start, end_row=hdr_r, end_column=col_result_end)
-            ws.cell(hdr_r, col_result_start, "RESULT").font = _header_font2
-            ws.cell(hdr_r, col_result_start).alignment = _header_align2
-
-            ws.merge_cells(start_row=hdr_r, start_column=col_grid_start, end_row=hdr_r, end_column=col_grid_end)
-            ws.cell(hdr_r, col_grid_start, "PITCH PROGRESSION").font = _header_font2
-            ws.cell(hdr_r, col_grid_start).alignment = _header_align2
-
-            ws.cell(hdr_r, col_count, "COUNT").font = _header_font2
-            ws.cell(hdr_r, col_count).alignment = _header_align2
-
-            ws.merge_cells(start_row=hdr_r, start_column=col_notes_start, end_row=hdr_r, end_column=col_notes_end)
-            ws.cell(hdr_r, col_notes_start, "NOTES").font = _header_font2
-            ws.cell(hdr_r, col_notes_start).alignment = _header_align2
-
-            _set_border_range(hdr_r, col_atbat, hdr_r, col_notes_end)
-            ws.row_dimensions[hdr_r].height = 22
-
-            block_h = 2  # pitch progression grid only 2 rows tall
-            first_data_row = hdr_r + 1
-            for i_ab in range(1, 13):
-                r1 = first_data_row + (i_ab-1)*block_h
-                r2 = r1 + block_h - 1
-                for rr in range(r1, r2+1):
-                    ws.row_dimensions[rr].height = 18
-
-                ws.merge_cells(start_row=r1, start_column=col_atbat, end_row=r2, end_column=col_atbat)
-                ws.cell(r1, col_atbat, f"#{i_ab}").alignment = Alignment(horizontal="center", vertical="center")
-                ws.cell(r1, col_atbat).font = Font(name=FONT_NAME, size=11)
-
-                ws.merge_cells(start_row=r1, start_column=col_result_start, end_row=r2, end_column=col_result_end)
-                ws.merge_cells(start_row=r1, start_column=col_count, end_row=r2, end_column=col_count)
-                ws.merge_cells(start_row=r1, start_column=col_notes_start, end_row=r2, end_column=col_notes_end)
-
-                # grid squares (no merges)
-                for rr in range(r1, r2+1):
-                    for cc in range(col_grid_start, col_grid_end+1):
-                        ws.cell(rr, cc).alignment = Alignment(horizontal="center", vertical="center")
-
-                _set_border_range(r1, col_atbat, r2, col_notes_end)
-
-                # strengthen internal separators
-                for rr in range(r1, r2+1):
-                    ws.cell(rr, col_result_start).border = ws.cell(rr, col_result_start).border.copy(left=thick)
-                    ws.cell(rr, col_result_end).border = ws.cell(rr, col_result_end).border.copy(right=thick)
-                    ws.cell(rr, col_grid_start).border = ws.cell(rr, col_grid_start).border.copy(left=thick)
-                    ws.cell(rr, col_grid_end).border = ws.cell(rr, col_grid_end).border.copy(right=thick)
-                    ws.cell(rr, col_count).border = ws.cell(rr, col_count).border.copy(left=thick, right=thick)
-                    ws.cell(rr, col_notes_start).border = ws.cell(rr, col_notes_start).border.copy(left=thick)
-                    ws.cell(rr, col_notes_end).border = ws.cell(rr, col_notes_end).border.copy(right=thick)
-
-            # (Removed) Extra Notes & General Information block to keep 1-page print clean
-
-            # Print setup per sheet: force one-page fit (like your highlighted area)
-            ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-            ws.page_setup.fitToWidth = 1
-            ws.page_setup.fitToHeight = 1
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            # Tight print area + margins for 1-page per player
-            ws.print_options.horizontalCentered = True
-            ws.print_options.verticalCentered = False
-            ws.page_margins.left = 0.25
-            ws.page_margins.right = 0.25
-            ws.page_margins.top = 0.30
-            ws.page_margins.bottom = 0.30
-            ws.page_margins.header = 0.10
-            ws.page_margins.footer = 0.10
-            ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
-            end_row = hdr_r + (12 * block_h)
-            ws.print_area = f"A1:{get_column_letter(col_notes_end)}{end_row}"
-
-
-        # Ensure at least one visible worksheet (prevents openpyxl IndexError)
-        try:
-            if getattr(writer, "book", None) is not None:
-                if len(writer.book.worksheets) == 0:
-                    writer.book.create_sheet("Player")
-                for _ws in writer.book.worksheets:
-                    _ws.sheet_state = "visible"
-                writer.book.active = 0
-        except Exception:
-            pass
-
-    # Finish Excel bytes after writing all player sheets
-    excel_bytes = excel_out.getvalue()
-
-    # CSV bytes (long format)
-    long_rows = []
-    for p in selectable_players:
-        st_p = season_players.get(p, {})
-        for t in indiv_types_selected:
-            if t == "GB (total)":
-                cnt = st_p.get("GB", 0)
-            elif t == "FB (total)":
-                cnt = st_p.get("FB", 0)
-            else:
-                cnt = st_p.get(t, 0)
-            long_rows.append({"Player": p, "Type": t, "Count": cnt})
-
-    df_long = pd.DataFrame(long_rows)
-    csv_long_bytes = df_long.to_csv(index=False).encode("utf-8")
-
-# Render the download buttons exactly once per app run (prevents accidental duplicates if this block
-    # gets executed inside a loop or repeated container).
-    if st.session_state.get("_indiv_dl_guard_nonce") != _RP_RUN_NONCE:
-        st.session_state["_indiv_dl_guard_nonce"] = _RP_RUN_NONCE
-
-        with dl_a:
-            st.download_button(
-                label="📥 Download Individual Spray (Excel - sheets per player)",
-                key=f"dl_indiv_excel_{TEAM_CODE_SAFE}_{team_key}_{_RP_RUN_NONCE}",
-                data=excel_bytes,
-                file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-
-        with dl_b:
-            st.download_button(
-                label="📄 Download Individual Spray (CSV)",
-                key=f"dl_indiv_csv_{TEAM_CODE_SAFE}_{team_key}_{_RP_RUN_NONCE}",
-                data=csv_long_bytes,
-                file_name=f"{TEAM_CODE}_{safe_team_ind}_Individual_Spray.csv",
-                mime="text/csv",
-            )
 
 # -----------------------------
 # FOOTER (Copyright)
