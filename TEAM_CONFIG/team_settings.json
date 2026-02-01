@@ -31,23 +31,21 @@
       "logo_path": "assets/yukon/logo.png",
       "background_path": "assets/yukon/background.jpg",
       "data_folder": "data/teams/YUKON"
-    
-  }
     },
     "rock": {
       "team_name": "Rock Creek High School",
-      "team_slug": "rock_creek",
+      "team_slug": "rock",
       "team_code": "ROCK",
-      "logo_path": "assets/rock/logo.png",
-      "background_path": "assets/rock/background.jpg",
-      "data_folder": "data/teams/rock"
- }
-},
+      "logo_path": "assets/rock/rocklogo.png",
+      "background_path": "assets/rock/rockbackground.jpg",
+      "data_folder": "data/teams/ROCK"
+    }
+  },
 
-  "team_branding":{
+  "team_branding": {
     "ROCK": {
       "logo_path": "assets/rock/rocklogo.png",
-      "background_path": "assets/ocs/rockbackground.jpg"
+      "background_path": "assets/rock/rockbackground.jpg"
     },
     "OCS": {
       "logo_path": "assets/ocs/ocslogo.png",
@@ -63,7 +61,6 @@
     }
   }
 }
-
 
 
 
