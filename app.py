@@ -353,15 +353,6 @@ BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
-# Running event tracking (NOT balls in play)
-RUN_KEYS = [
-    # Stolen Bases
-    "SB", "SB-2B", "SB-3B",
-    # Caught Stealing
-    "CS", "CS-2B", "CS-3B",
-]
-
-
 
 # Games Played tracking (per player)
 GP_KEY = "GP"
@@ -509,29 +500,6 @@ RIGHT_SIDE_PATTERNS = [
     "between second and first"
 ]
 
-# -----------------------------
-# RUNNING EVENTS (SB / CS) — PICKOFFS + DI REMOVED
-# -----------------------------
-SB_ACTION_REGEX = re.compile(
-    r"""
-    \b(?:steals?|stole|stolen\s+base)\b
-    (?:\s+(?:a|an))?
-    (?:\s+base)?
-    (?:\s+(?:at|to))?
-    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
-
-CS_ACTION_REGEX = re.compile(
-    r"""
-    \b(?:caught\s+stealing|out\s+stealing)\b
-    (?:\s+(?:at|trying\s+for|attempting|to))?
-    (?:\s+base)?
-    (?:\s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?))?
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
 
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
@@ -1297,7 +1265,7 @@ st.markdown(
 <style>
 h1.app-title {{
     font-family: 'Black Ops One', 'Jersey 10', sans-serif !important;
-    font-size: 6.0rem !important;
+    font-size: 4.0rem !important;
     color: {PRIMARY} !important;
     text-align: center !important;
     letter-spacing: 0.20em !important;
@@ -1644,94 +1612,9 @@ with col_reset:
 
 
 # -----------------------------
-# ✅ COACH-PROOF BACKUP / RESTORE (SUPABASE)
-# -----------------------------
-with st.expander("🛟 Backup / Restore (Coach-Proof) — Download + Upload Season Totals"):
-    raw_payload = {
-        "meta": {"games_played": games_played},
-        "team": season_team,
-        "players": season_players,
-        "archived_players": sorted(list(archived_players or set())),
-    }
-
-    backup_bytes = json.dumps(raw_payload, indent=2).encode("utf-8")
-    safe_team = re.sub(r"[^A-Za-z0-9_-]+", "_", selected_team).strip("_")
-
-    st.download_button(
-        label="⬇️ Download Season Totals JSON (backup)",
-        data=backup_bytes,
-        file_name=f"{TEAM_CODE}_{safe_team}_season_totals_backup.json",
-        mime="application/json",
-    )
-
-    st.markdown("**Restore from a backup JSON:** (This overwrites the current season totals for this selected team.)")
-
-    uploaded = st.file_uploader(
-        "Upload backup JSON",
-        type=["json"],
-        accept_multiple_files=False,
-        help="Choose a season_totals_backup.json file you downloaded earlier.",
-    )
-
-    do_restore = st.button("♻️ Restore Backup NOW")
-    if do_restore:
-        if uploaded is None:
-            st.error("Upload a backup JSON first.")
-            st.stop()
-
-        try:
-            incoming = json.load(uploaded)
-            if not isinstance(incoming, dict):
-                raise ValueError("Backup JSON is not an object.")
-
-            incoming_team = incoming.get("team", {})
-            incoming_players = incoming.get("players", {})
-            incoming_meta = incoming.get("meta", {})
-            incoming_archived = incoming.get("archived_players", [])
-
-            if not isinstance(incoming_team, dict) or not isinstance(incoming_players, dict) or not isinstance(incoming_meta, dict):
-                raise ValueError("Backup JSON is missing required sections: meta/team/players.")
-
-            incoming_team = ensure_all_keys(incoming_team)
-            fixed_players = {}
-            for p, sd in incoming_players.items():
-                fixed_players[p] = ensure_all_keys(sd) if isinstance(sd, dict) else empty_stat_dict()
-
-            for p in current_roster:
-                if p not in fixed_players:
-                    fixed_players[p] = empty_stat_dict()
-
-            restored_games_played = int(incoming_meta.get("games_played", 0) or 0)
-
-            # Archived players set
-            restored_archived = set()
-            if isinstance(incoming_archived, list):
-                restored_archived = {str(x).strip().strip('"') for x in incoming_archived if str(x).strip()}
-
-            legacy_processed = incoming_team.get("_processed_game_keys", [])
-            legacy_hashes = []
-            if isinstance(legacy_processed, list):
-                legacy_hashes = [str(x) for x in legacy_processed if x]
-                restored_games_played = len(set(legacy_hashes))
-
-            db_reset_season(TEAM_CODE_SAFE, team_key)
-            db_save_season_totals(TEAM_CODE_SAFE, team_key, incoming_team, fixed_players, restored_games_played, restored_archived)
-
-            if legacy_hashes:
-                for h in set(legacy_hashes):
-                    db_try_mark_game_processed(TEAM_CODE_SAFE, team_key, h)
-
-            st.success("✅ Restore complete (Supabase). Reloading…")
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"Restore failed: {e}")
-
-
-# -----------------------------
 # PLAY-BY-PLAY INPUT
 # -----------------------------
-st.subheader("📓 GameChanger Play-by-Play")
+st.subheader("GameChanger Play-by-Play")
 
 raw_text = st.text_area(
     f"Paste the full play-by-play for ONE game involving {selected_team}:",
@@ -1990,10 +1873,6 @@ for player in display_players:
     for ck in COMBO_KEYS:
         row[ck] = stats.get(ck, 0)
 
-    # Baserunning (keep)
-    for rk in RUN_KEYS:
-        row[rk] = stats.get(rk, 0)
-
     season_rows.append(row)
 
 df_season = pd.DataFrame(season_rows)
@@ -2229,7 +2108,7 @@ st.dataframe(df_show, use_container_width=True)
 # -----------------------------
 # 📝 COACHES SCOUTING NOTES (per selected opponent/team)
 # -----------------------------
-notes_key = f"coach_notes__{TEAM_CODE_SAFE}__{team_key}"
+notes_key = f"coaches_notes__{TEAM_CODE_SAFE}__{team_key}"
 if notes_key not in st.session_state:
     st.session_state[notes_key] = db_get_coach_notes(TEAM_CODE_SAFE, team_key)
 
@@ -2603,8 +2482,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         )
 
         note_cell = ws.cell(row=top_row, column=left_col)
-        note_cell.value = f"COACH NOTES:\n\n{notes_box_text}"
-        note_cell.font = Font(size=12)
+        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
+        note_cell.font = Font(size=14)
         note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
         for r in range(top_row, top_row + box_height):
