@@ -353,6 +353,9 @@ BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
+# ✅ baserunning removed — keep this defined so helpers never crash
+RUN_KEYS = []
+
 
 # Games Played tracking (per player)
 GP_KEY = "GP"
@@ -380,7 +383,7 @@ def ensure_all_keys(d: dict):
         d.setdefault(k, 0)
     for ck in COMBO_KEYS:
         d.setdefault(ck, 0)
-    for rk in RUN_KEYS:
+    for rk in globals().get("RUN_KEYS", []):
         d.setdefault(rk, 0)
     d.setdefault(GP_KEY, 0)
     return d
@@ -2569,6 +2572,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
