@@ -45,7 +45,7 @@
 },
 
   "team_branding":{
-    "rock": {
+    "ROCK": {
       "logo_path": "assets/rock/rocklogo.png",
       "background_path": "assets/ocs/rockbackground.jpg"
     },
@@ -63,6 +63,7 @@
     }
   }
 }
+
 
 
 
