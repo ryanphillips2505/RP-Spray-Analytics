@@ -24,6 +24,11 @@ import time  # anti-stuck processing lock + failsafe unlock
 from datetime import datetime
 import uuid
 
+st.write("ACTIVE TEAM:", TEAM_CODE)
+st.write("LOGO PATH:", logo_path)
+st.write("BG PATH:", background_path)
+
+
 def _write_table_two_blocks(ws, start_row, cols, row_values, split_at=None, gap=2):
     """Write a header + rows into two side-by-side blocks for landscape printing.
     - cols: list of column names
@@ -2792,6 +2797,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
