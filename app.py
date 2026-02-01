@@ -353,10 +353,10 @@ BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
+# ✅ BASERUNNING REMOVED
+RUN_KEYS = []
 
-# Games Played tracking (per player)
 GP_KEY = "GP"
-
 
 # -----------------------------
 # STAT HELPERS
@@ -504,19 +504,6 @@ RIGHT_SIDE_PATTERNS = [
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
 
-def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
-    if not base_raw:
-        return prefix
-    b = base_raw.strip().lower().strip("()").strip()
-    if b in ["2nd", "second"]:
-        return f"{prefix}-2B"
-    if b in ["3rd", "third"]:
-        return f"{prefix}-3B"
-    if b == "home":
-        return f"{prefix}-H"
-    return prefix
-
-
 BAD_FIRST_TOKENS = {
     "top", "bottom", "inning", "pitch", "ball", "strike", "foul",
     "runner", "runners", "advances", "advance", "steals", "stole", "caught",
@@ -566,62 +553,6 @@ def get_batter_name(line: str, roster: set[str]):
         return last_matches[0]
 
     return None
-
-
-def extract_runner_name_near_event(clean_line: str, match_start: int, roster: set[str]) -> Optional[str]:
-    left = (clean_line[:match_start] or "").strip()
-    if not left:
-        return None
-
-    chunk = left.split(",")[-1].strip()
-
-    runner = get_batter_name(chunk, roster)
-    if runner:
-        return runner
-
-    parts = chunk.split()
-    if len(parts) >= 2:
-        candidate = parts[-2] + " " + parts[-1]
-        if candidate in roster:
-            return candidate
-
-    return None
-
-
-def extract_runner_name_fallback(clean_line: str, roster: set[str]) -> Optional[str]:
-    runner = get_batter_name(clean_line, roster)
-    if runner:
-        return runner
-
-    pm = PAREN_NAME_REGEX.search(clean_line)
-    if pm:
-        inside = re.sub(r"\s+", " ", pm.group(1).strip())
-        runner = get_batter_name(inside, roster)
-        if runner:
-            return runner
-
-    return None
-
-
-def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Returns (runner_name, total_key, base_key) or (None, None, None).
-    PICKOFFS REMOVED.
-    """
-    m = SB_ACTION_REGEX.search(clean_line)
-    if m:
-        base_key = normalize_base_bucket("SB", m.group(1) if (m.lastindex or 0) >= 1 else None)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "SB", base_key
-
-    m = CS_ACTION_REGEX.search(clean_line)
-    if m:
-        base_raw = m.group(1) if (m.lastindex or 0) >= 1 else None
-        base_key = normalize_base_bucket("CS", base_raw)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "CS", base_key
-
-    return None, None, None
 
 
 def is_ball_in_play(line_lower: str) -> bool:
@@ -1747,14 +1678,6 @@ if process_clicked:
                         if (" " + p.upper() + " ") in uline:
                             gp_in_game.add(p)
 
-            # running events (not BIP)
-            runner, total_key, base_key = parse_running_event(clean_line, current_roster)
-            if runner and total_key:
-                game_team[total_key] += 1
-                game_players[runner][total_key] += 1
-                if base_key and base_key in RUN_KEYS:
-                    game_team[base_key] += 1
-                    game_players[runner][base_key] += 1
 
             batter = get_batter_name(clean_line, current_roster)
             if batter is None:
@@ -2542,6 +2465,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
