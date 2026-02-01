@@ -302,7 +302,14 @@ LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "Bunt", "Sac Bun
 BALLTYPE_KEYS = ["GB", "FB"]
 COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
- 
+
+# Running event tracking (NOT balls in play)
+RUN_KEYS = [
+    # Stolen Bases
+    "SB", "SB-2B", "SB-3B",
+    # Caught Stealing
+    "CS", "CS-2B", "CS-3B",
+]
 
 # -----------------------------
 # PITCHING (YUKON) — IP / K / BB / STRIKE%
@@ -419,6 +426,8 @@ def empty_stat_dict():
         d[k] = 0
     for ck in COMBO_KEYS:
         d[ck] = 0
+    for rk in RUN_KEYS:
+        d[rk] = 0
     return d
 
 
@@ -429,6 +438,8 @@ def ensure_all_keys(d: dict):
         d.setdefault(k, 0)
     for ck in COMBO_KEYS:
         d.setdefault(ck, 0)
+    for rk in RUN_KEYS:
+        d.setdefault(rk, 0)
     return d
 
 
@@ -545,6 +556,203 @@ RIGHT_SIDE_PATTERNS = [
     "between first baseman and second baseman", "between 1st and 2nd",
     "between second and first"
 ]
+
+# -----------------------------
+# RUNNING EVENTS (SB / CS / DI) — PICKOFFS REMOVED + FIXED
+# -----------------------------
+SB_ACTION_REGEX = re.compile(
+    r"""
+    \b(?:steals?|stole|stolen\s+base)\b
+    (?:\s+(?:a|an))?
+    (?:\s+base)?
+    (?:\s+(?:at|to))?
+    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+CS_ACTION_REGEX = re.compile(
+    r"""
+    \b(?:caught\s+stealing|out\s+stealing)\b
+    (?:\s+(?:at|trying\s+for|attempting|to))?
+    (?:\s+base)?
+    (?:\s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?))?
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+DI_REGEX_1 = re.compile(
+    r"""
+    \bdefensive\s+indifference\b
+    .*?
+    \b(?:to|advances?\s+to|takes)\b
+    (?:\s+base)?
+    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+DI_REGEX_2 = re.compile(
+    r"""
+    \b(?:to|advances?\s+to|takes)\b
+    (?:\s+base)?
+    \s*(\(?\s*(?:2nd|3rd|home|second|third)\s*\)?)
+    .*?
+    \bdefensive\s+indifference\b
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+DI_REGEX_BARE = re.compile(r"\bdefensive\s+indifference\b", re.IGNORECASE)
+PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
+
+
+def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
+    if not base_raw:
+        return prefix
+    b = base_raw.strip().lower().strip("()").strip()
+    if b in ["2nd", "second"]:
+        return f"{prefix}-2B"
+    if b in ["3rd", "third"]:
+        return f"{prefix}-3B"
+    if b == "home":
+        return f"{prefix}-H"
+    return prefix
+
+
+BAD_FIRST_TOKENS = {
+    "top", "bottom", "inning", "pitch", "ball", "strike", "foul",
+    "runner", "runners", "advances", "advance", "steals", "stole", "caught",
+    "substitution", "defensive", "offensive", "double", "triple", "single", "home",
+    "out", "safe", "error", "no", "one", "two", "three",
+}
+
+
+def starts_like_name(token: str) -> bool:
+    if not token:
+        return False
+    t = token.strip().strip('"').strip().lower()
+    return t[:1].isalpha() and t not in BAD_FIRST_TOKENS
+
+
+def overall_confidence_score(conf_val: int):
+    if conf_val >= 4:
+        return "high"
+    if conf_val >= 2:
+        return "medium"
+    return "low"
+
+
+def get_batter_name(line: str, roster: set[str]):
+    line = (line or "").strip().strip('"')
+    if not line:
+        return None
+
+    line = re.sub(r"\([^)]*\)", "", line)
+    line = re.sub(r"\s+", " ", line).strip()
+
+    parts = line.split()
+    if not parts:
+        return None
+
+    if not starts_like_name(parts[0]):
+        return None
+
+    if len(parts) >= 2:
+        candidate_two = parts[0] + " " + parts[1]
+        if candidate_two in roster:
+            return candidate_two
+
+    last = parts[0]
+    last_matches = [p for p in roster if p.split() and p.split()[-1] == last]
+    if len(last_matches) == 1:
+        return last_matches[0]
+
+    return None
+
+
+def infer_our_team_name_from_pbp(lines, roster):
+    """Infer OUR team name as it appears in half-inning headers by finding a header followed by a roster batter."""
+    current_batting = None
+    for raw in lines:
+        s = (raw or "").strip().strip('"')
+        s = re.sub(r"\([^)]*\)", "", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        maybe = parse_batting_team_from_half(s)
+        if maybe:
+            current_batting = maybe
+            continue
+        if current_batting:
+            b = get_batter_name(s, roster)
+            if b:
+                return current_batting
+    return None
+
+
+def extract_runner_name_near_event(clean_line: str, match_start: int, roster: set[str]) -> Optional[str]:
+    left = (clean_line[:match_start] or "").strip()
+    if not left:
+        return None
+
+    chunk = left.split(",")[-1].strip()
+
+    runner = get_batter_name(chunk, roster)
+    if runner:
+        return runner
+
+    parts = chunk.split()
+    if len(parts) >= 2:
+        candidate = parts[-2] + " " + parts[-1]
+        if candidate in roster:
+            return candidate
+
+    return None
+
+
+def extract_runner_name_fallback(clean_line: str, roster: set[str]) -> Optional[str]:
+    runner = get_batter_name(clean_line, roster)
+    if runner:
+        return runner
+
+    pm = PAREN_NAME_REGEX.search(clean_line)
+    if pm:
+        inside = re.sub(r"\s+", " ", pm.group(1).strip())
+        runner = get_batter_name(inside, roster)
+        if runner:
+            return runner
+
+    return None
+
+
+def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Returns (runner_name, total_key, base_key) or (None, None, None).
+    PICKOFFS REMOVED.
+    """
+    m = SB_ACTION_REGEX.search(clean_line)
+    if m:
+        base_key = normalize_base_bucket("SB", m.group(1) if (m.lastindex or 0) >= 1 else None)
+        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
+        return runner, "SB", base_key
+
+    m = CS_ACTION_REGEX.search(clean_line)
+    if m:
+        base_raw = m.group(1) if (m.lastindex or 0) >= 1 else None
+        base_key = normalize_base_bucket("CS", base_raw)
+        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
+        return runner, "CS", base_key
+
+    m = DI_REGEX_1.search(clean_line) or DI_REGEX_2.search(clean_line)
+    if m:
+        base_key = normalize_base_bucket("DI", m.group(1) if (m.lastindex or 0) >= 1 else None)
+        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
+        return runner, "DI", base_key
+
+    if DI_REGEX_BARE.search(clean_line):
+        runner = extract_runner_name_fallback(clean_line, roster)
+        return runner, "DI", "DI"
+
+    return None, None, None
 
 
 def is_ball_in_play(line_lower: str) -> bool:
@@ -699,13 +907,13 @@ def save_roster_text(path: str, text: str):
 
 
 def add_game_to_season(season_team, season_players, game_team, game_players):
-    for key in LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS:
+    for key in LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS:
         season_team[key] = season_team.get(key, 0) + game_team.get(key, 0)
 
     for player, gstats in game_players.items():
         season_players.setdefault(player, empty_stat_dict())
         sstats = season_players[player]
-        for key in LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS:
+        for key in LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS:
             sstats[key] = sstats.get(key, 0) + gstats.get(key, 0)
 
 
@@ -1804,6 +2012,15 @@ if process_clicked:
                         game_pitching.setdefault(pname, empty_pitching_stat())
                         game_pitching[pname]["PITCHES"] += 1
 
+            # running events (not BIP)
+            runner, total_key, base_key = parse_running_event(clean_line, current_roster)
+            if runner and total_key:
+                game_team[total_key] += 1
+                game_players[runner][total_key] += 1
+                if base_key and base_key in RUN_KEYS:
+                    game_team[base_key] += 1
+                    game_players[runner][base_key] += 1
+
             batter = get_batter_name(clean_line, current_roster)
             if batter is None:
                 continue
@@ -1911,10 +2128,12 @@ for player in display_players:
     row["FB"] = stats.get("FB", 0)
     for ck in COMBO_KEYS:
         row[ck] = stats.get(ck, 0)
+    for rk in RUN_KEYS:
+        row[rk] = stats.get(rk, 0)
     season_rows.append(row)
 
 df_season = pd.DataFrame(season_rows)
-col_order = (["Player"] + LOCATION_KEYS + ["GB", "FB"] + COMBO_KEYS)
+col_order = (["Player"] + LOCATION_KEYS + ["GB", "FB"] + COMBO_KEYS + RUN_KEYS)
 col_order = [c for c in col_order if c in df_season.columns]
 df_season = df_season[col_order]
 
@@ -2095,7 +2314,7 @@ else:
 
 selectable_players = [
     p for p in indiv_candidates
-    if p in season_players and any(season_players[p].get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS))
+    if p in season_players and any(season_players[p].get(k, 0) > 0 for k in (LOCATION_KEYS + BALLTYPE_KEYS + COMBO_KEYS + RUN_KEYS))
 ]
 
 if not selectable_players:
@@ -2110,6 +2329,14 @@ else:
 
     for ck in COMBO_KEYS:
         indiv_rows.append({"Type": ck, "Count": stats.get(ck, 0)})
+
+    # running events
+    indiv_rows.append({"Type": "SB", "Count": stats.get("SB", 0)})
+    indiv_rows.append({"Type": "CS", "Count": stats.get("CS", 0)})
+    indiv_rows.append({"Type": "DI", "Count": stats.get("DI", 0)})
+    for rk in RUN_KEYS:
+        if rk not in ["SB", "CS", "DI"]:
+            indiv_rows.append({"Type": rk, "Count": stats.get(rk, 0)})
 
     st.table(indiv_rows)
 
