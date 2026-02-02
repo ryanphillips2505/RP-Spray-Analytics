@@ -2351,7 +2351,6 @@ _box_thick = Border(left=_thick, right=_thick, top=_thick, bottom=_thick)
 _title_font = Font(bold=True, size=20)
 _label_font = Font(bold=True, size=12)
 _val_font   = Font(bold=True, size=12)
-_gbfb_font  = Font(bold=True, size=10)
 
 def _clear_sheet_safely(ws_):
     try:
@@ -2373,10 +2372,9 @@ def _clear_sheet_safely(ws_):
 def _outline_range(ws_, rng: str, border: Border):
     """
     Excel merged cells only keep border on the top-left cell.
-    This forces a full outline around the entire merged (or normal) range.
+    Force a full outline around the entire merged (or normal) range.
     """
     from openpyxl.utils.cell import range_boundaries
-
     min_col, min_row, max_col, max_row = range_boundaries(rng)
 
     for r in range(min_row, max_row + 1):
@@ -2397,23 +2395,17 @@ def _outline_range(ws_, rng: str, border: Border):
                 horizontal=cell.border.horizontal,
             )
 
-def _pos_label(text: str) -> str:
-    # ✅ Put GB/FB inside label box so NOTHING shifts
-    # Using unicode EN SPACE to keep it readable when centered.
-    return f"{text}\nGB\u2002\u2002\u2002\u2002FB"
-
-def _merge_label(ws_, rng, text, show_gbfb: bool = True):
-    # ✅ Position label boxes THICK + full outline
+def _merge_label(ws_, rng, text):
+    # Position label boxes THICK + full outline
     ws_.merge_cells(rng)
     anchor = ws_[rng.split(":")[0]]
-    anchor.value = _pos_label(text) if show_gbfb else str(text)
+    anchor.value = str(text)
     anchor.font = _label_font
-    anchor.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
+    anchor.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
     _outline_range(ws_, rng, _box_thick)
 
 def _set_pct_cell(ws_, addr, v):
-    # ✅ Data cells THICK
+    # Data cells THICK
     c = ws_[addr]
     c.value = _safe_float(v)
     c.number_format = "0%"
@@ -2443,11 +2435,18 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     for col in ["C","D","E","F","G","H","I"]:
         ws_.column_dimensions[col].width = 13
 
-    # heights
+    # heights (match screenshot)
     ws_.row_dimensions[1].height = 32
-    ws_.row_dimensions[2].height = 18  # breathing room under the title (keeps look clean)
-    for rr in range(3, 19):
+    ws_.row_dimensions[2].height = 18
+
+    # ✅ label rows taller
+    for rr in [3, 5, 7, 9, 11]:
+        ws_.row_dimensions[rr].height = 30
+
+    # ✅ value rows normal
+    for rr in [4, 6, 8, 10, 12, 17, 18]:
         ws_.row_dimensions[rr].height = 20
+
     ws_.row_dimensions[16].height = 10
 
     # -----------------------------
@@ -2458,53 +2457,115 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     t.value = str(player_name)
     t.font = _title_font
     t.alignment = _center
-
-    # Full outline around merged title area
     _outline_range(ws_, "A1:I1", _box_thick)
 
     # -----------------------------
-    # POSITION BLOCKS (labels include GB/FB line)
+    # POSITION BLOCKS (match screenshot layout)
     # -----------------------------
 
-    # CF
-    _merge_label(ws_, "E3:F3", "CF", True)
-    _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0))
-    _set_pct_cell(ws_, "F4", vals.get("FB-CF", 0))
+    # CF  (label row 3, GB/FB row 4)
+    _merge_label(ws_, "E3:F3", "CF")
+    ws_["E4"].value = "GB"
+    ws_["F4"].value = "FB"
+    ws_["E4"].font = _label_font
+    ws_["F4"].font = _label_font
+    ws_["E4"].alignment = _center
+    ws_["F4"].alignment = _center
+    ws_["E4"].border = _box_thick
+    ws_["F4"].border = _box_thick
+    _set_pct_cell(ws_, "E5", vals.get("GB-CF", 0))
+    _set_pct_cell(ws_, "F5", vals.get("FB-CF", 0))
 
     # LF
-    _merge_label(ws_, "C5:D5", "LF", True)
-    _set_pct_cell(ws_, "C6", vals.get("GB-LF", 0))
-    _set_pct_cell(ws_, "D6", vals.get("FB-LF", 0))
+    _merge_label(ws_, "C5:D5", "LF")
+    ws_["C6"].value = "GB"
+    ws_["D6"].value = "FB"
+    ws_["C6"].font = _label_font
+    ws_["D6"].font = _label_font
+    ws_["C6"].alignment = _center
+    ws_["D6"].alignment = _center
+    ws_["C6"].border = _box_thick
+    ws_["D6"].border = _box_thick
+    _set_pct_cell(ws_, "C7", vals.get("GB-LF", 0))
+    _set_pct_cell(ws_, "D7", vals.get("FB-LF", 0))
 
     # RF
-    _merge_label(ws_, "G5:H5", "RF", True)
-    _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0))
-    _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0))
+    _merge_label(ws_, "G5:H5", "RF")
+    ws_["G6"].value = "GB"
+    ws_["H6"].value = "FB"
+    ws_["G6"].font = _label_font
+    ws_["H6"].font = _label_font
+    ws_["G6"].alignment = _center
+    ws_["H6"].alignment = _center
+    ws_["G6"].border = _box_thick
+    ws_["H6"].border = _box_thick
+    _set_pct_cell(ws_, "G7", vals.get("GB-RF", 0))
+    _set_pct_cell(ws_, "H7", vals.get("FB-RF", 0))
 
-    # SS
-    _merge_label(ws_, "E7:F7", "SS", True)
-    _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0))
-    _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0))
+    # ✅ SS SHIFT LEFT ONE COLUMN (D:E instead of E:F)
+    _merge_label(ws_, "D7:E7", "SS")
+    ws_["D8"].value = "GB"
+    ws_["E8"].value = "FB"
+    ws_["D8"].font = _label_font
+    ws_["E8"].font = _label_font
+    ws_["D8"].alignment = _center
+    ws_["E8"].alignment = _center
+    ws_["D8"].border = _box_thick
+    ws_["E8"].border = _box_thick
+    _set_pct_cell(ws_, "D9", vals.get("GB-SS", 0))
+    _set_pct_cell(ws_, "E9", vals.get("FB-SS", 0))
 
-    # 2B  (MAKE IT MERGED so border is perfect)
-    _merge_label(ws_, "G7:H7", "2B", True)
-    _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0))
-    _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0))
+    # ✅ 2B SHIFT LEFT ONE COLUMN (F:G instead of G:H)
+    _merge_label(ws_, "F7:G7", "2B")
+    ws_["F8"].value = "GB"
+    ws_["G8"].value = "FB"
+    ws_["F8"].font = _label_font
+    ws_["G8"].font = _label_font
+    ws_["F8"].alignment = _center
+    ws_["G8"].alignment = _center
+    ws_["F8"].border = _box_thick
+    ws_["G8"].border = _box_thick
+    _set_pct_cell(ws_, "F9", vals.get("GB-2B", 0))
+    _set_pct_cell(ws_, "G9", vals.get("FB-2B", 0))
 
     # 3B
-    _merge_label(ws_, "C9:D9", "3B", True)
-    _set_pct_cell(ws_, "C10", vals.get("GB-3B", 0))
-    _set_pct_cell(ws_, "D10", vals.get("FB-3B", 0))
+    _merge_label(ws_, "C9:D9", "3B")
+    ws_["C10"].value = "GB"
+    ws_["D10"].value = "FB"
+    ws_["C10"].font = _label_font
+    ws_["D10"].font = _label_font
+    ws_["C10"].alignment = _center
+    ws_["D10"].alignment = _center
+    ws_["C10"].border = _box_thick
+    ws_["D10"].border = _box_thick
+    _set_pct_cell(ws_, "C11", vals.get("GB-3B", 0))
+    _set_pct_cell(ws_, "D11", vals.get("FB-3B", 0))
 
     # 1B
-    _merge_label(ws_, "G9:H9", "1B", True)
-    _set_pct_cell(ws_, "G10", vals.get("GB-1B", 0))
-    _set_pct_cell(ws_, "H10", vals.get("FB-1B", 0))
+    _merge_label(ws_, "G9:H9", "1B")
+    ws_["G10"].value = "GB"
+    ws_["H10"].value = "FB"
+    ws_["G10"].font = _label_font
+    ws_["H10"].font = _label_font
+    ws_["G10"].alignment = _center
+    ws_["H10"].alignment = _center
+    ws_["G10"].border = _box_thick
+    ws_["H10"].border = _box_thick
+    _set_pct_cell(ws_, "G11", vals.get("GB-1B", 0))
+    _set_pct_cell(ws_, "H11", vals.get("FB-1B", 0))
 
     # P
-    _merge_label(ws_, "E11:F11", "P", True)
-    _set_pct_cell(ws_, "E12", vals.get("GB-P", 0))
-    _set_pct_cell(ws_, "F12", vals.get("FB-P", 0))
+    _merge_label(ws_, "E11:F11", "P")
+    ws_["E12"].value = "GB"
+    ws_["F12"].value = "FB"
+    ws_["E12"].font = _label_font
+    ws_["F12"].font = _label_font
+    ws_["E12"].alignment = _center
+    ws_["F12"].alignment = _center
+    ws_["E12"].border = _box_thick
+    ws_["F12"].border = _box_thick
+    _set_pct_cell(ws_, "E13", vals.get("GB-P", 0))
+    _set_pct_cell(ws_, "F13", vals.get("FB-P", 0))
 
     # divider row 16
     for col in ["A","B","C","D","E","F","G","H","I"]:
@@ -2512,9 +2573,7 @@ def _build_player_scout_sheet(ws_, player_name, stats):
         cell.fill = PatternFill("solid", fgColor="000000")
         cell.border = Border(top=_thick, bottom=_thick)
 
-    # -----------------------------
     # BIP box (THICK)
-    # -----------------------------
     ws_.merge_cells("C17:D17")
     b1 = ws_["C17"]
     b1.value = "BIP"
@@ -2544,6 +2603,7 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     ws_.page_margins.header = 0.15
     ws_.page_margins.footer = 0.15
     ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
+
 
 
 
@@ -2930,6 +2990,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
