@@ -2275,8 +2275,234 @@ else:
 
 out = BytesIO()
 
+# ==========================================================
+# SEASON REPORT (EXCEL) + INDIVIDUAL PLAYER TABS
+# ==========================================================
+
+from openpyxl.cell.cell import MergedCell
+
+def _safe_sheet_name(name: str) -> str:
+    name = str(name or "").strip()
+    name = re.sub(r'[:\\/?*\[\]]', "", name)  # invalid Excel sheet chars
+    name = re.sub(r"\s+", " ", name)
+    return name[:31] if name else "Player"
+
+def _unique_sheet_name(wb, base: str) -> str:
+    if base not in wb.sheetnames:
+        return base
+    i = 2
+    while True:
+        suffix = f" {i}"
+        cand = (base[:31 - len(suffix)] + suffix)[:31]
+        if cand not in wb.sheetnames:
+            return cand
+        i += 1
+
+def _safe_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return 0.0
+
+# --- orange → red bins (match TEAM heat map style) ---
+_pct_bins_player = [
+    (0.00, 0.05, None),
+    (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
+    (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
+    (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
+    (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
+    (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
+    (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
+    (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
+    (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
+    (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
+    (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
+    (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
+    (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
+    (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
+    (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
+    (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
+    (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
+    (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
+    (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
+    (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
+]
+
+def _pct_fill_player(v):
+    x = _safe_float(v)
+    if x <= 0:
+        return None
+    if x > 1:
+        x = 1.0
+    for lo, hi, fill in _pct_bins_player:
+        if fill is None:
+            continue
+        if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
+            return fill
+    return None
+
+_center = Alignment(horizontal="center", vertical="center")
+_thin = Side(style="thin", color="000000")
+_thick = Side(style="thick", color="000000")
+_box = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+_thick_bottom = Border(bottom=_thick)
+
+_title_font = Font(bold=True, size=20)
+_label_font = Font(bold=True, size=12)
+_val_font = Font(bold=True, size=12)
+
+def _clear_sheet_safely(ws_):
+    try:
+        for rng in list(ws_.merged_cells.ranges):
+            ws_.unmerge_cells(str(rng))
+    except Exception:
+        pass
+
+    for r in range(1, 80):
+        for c in range(1, 30):
+            cell = ws_.cell(row=r, column=c)
+            if isinstance(cell, MergedCell):
+                continue
+            cell.value = None
+            cell.border = Border()
+            cell.fill = PatternFill()
+            cell.alignment = Alignment()
+
+def _merge_label(ws_, rng, text):
+    ws_.merge_cells(rng)
+    c = ws_[rng.split(":")[0]]
+    c.value = text
+    c.font = _label_font
+    c.alignment = _center
+    c.border = _box
+
+def _set_pct_cell(ws_, addr, v):
+    c = ws_[addr]
+    c.value = _safe_float(v)
+    c.number_format = "0%"
+    c.font = _val_font
+    c.alignment = _center
+    c.border = _box
+    f = _pct_fill_player(c.value)
+    if f:
+        c.fill = f
+
+def _build_player_scout_sheet(ws_, player_name, stats):
+    gb = int(stats.get("GB", 0) or 0)
+    fb = int(stats.get("FB", 0) or 0)
+    bip = gb + fb
+
+    vals = {}
+    for ck in COMBO_KEYS:
+        raw = float(stats.get(ck, 0) or 0)
+        vals[ck] = (raw / bip) if bip else 0.0
+    vals["BIP"] = int(bip)
+
+    _clear_sheet_safely(ws_)
+
+    # widths
+    ws_.column_dimensions["A"].width = 5
+    ws_.column_dimensions["B"].width = 5
+    for col in ["C","D","E","F","G","H","I"]:
+        ws_.column_dimensions[col].width = 13
+
+    # heights
+    ws_.row_dimensions[1].height = 30
+    for rr in range(2, 19):
+        ws_.row_dimensions[rr].height = 20
+    ws_.row_dimensions[16].height = 10
+
+    # title
+    ws_.merge_cells("A1:I1")
+    t = ws_["A1"]
+    t.value = str(player_name)
+    t.font = _title_font
+    t.alignment = _center
+    t.border = _thick_bottom
+
+    # CF
+    _merge_label(ws_, "E3:F3", "CF")
+    _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0))
+    _set_pct_cell(ws_, "F4", vals.get("FB-CF", 0))
+
+    # LF
+    _merge_label(ws_, "C5:D5", "LF")
+    _set_pct_cell(ws_, "C6", vals.get("GB-LF", 0))
+    _set_pct_cell(ws_, "D6", vals.get("FB-LF", 0))
+
+    # RF
+    _merge_label(ws_, "G5:H5", "RF")
+    _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0))
+    _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0))
+
+    # SS
+    _merge_label(ws_, "E7:F7", "SS")
+    _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0))
+    _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0))
+
+    # 2B
+    ws_["G7"].value = "2B"
+    ws_["G7"].font = _label_font
+    ws_["G7"].alignment = _center
+    ws_["G7"].border = _box
+    _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0))
+    _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0))
+
+    # 3B
+    _merge_label(ws_, "C9:D9", "3B")
+    _set_pct_cell(ws_, "C10", vals.get("GB-3B", 0))
+    _set_pct_cell(ws_, "D10", vals.get("FB-3B", 0))
+
+    # 1B
+    _merge_label(ws_, "G9:H9", "1B")
+    _set_pct_cell(ws_, "G10", vals.get("GB-1B", 0))
+    _set_pct_cell(ws_, "H10", vals.get("FB-1B", 0))
+
+    # P
+    _merge_label(ws_, "E11:F11", "P")
+    _set_pct_cell(ws_, "E12", vals.get("GB-P", 0))
+    _set_pct_cell(ws_, "F12", vals.get("FB-P", 0))
+
+    # divider row 16
+    for col in ["A","B","C","D","E","F","G","H","I"]:
+        cell = ws_[f"{col}16"]
+        cell.fill = PatternFill("solid", fgColor="000000")
+        cell.border = Border(top=_thick, bottom=_thick)
+
+    # BIP box
+    ws_.merge_cells("C17:D17")
+    b1 = ws_["C17"]
+    b1.value = "BIP"
+    b1.font = Font(bold=True, size=12)
+    b1.alignment = _center
+    b1.fill = PatternFill("solid", fgColor="E5E7EB")
+    b1.border = _box
+
+    ws_.merge_cells("C18:D18")
+    b2 = ws_["C18"]
+    b2.value = int(vals.get("BIP", 0) or 0)
+    b2.font = Font(bold=True, size=14)
+    b2.alignment = _center
+    b2.border = _box
+
+    # print setup
+    ws_.print_area = "A1:I40"
+    ws_.page_setup.orientation = ws_.ORIENTATION_PORTRAIT
+    ws_.page_setup.fitToWidth = 1
+    ws_.page_setup.fitToHeight = 1
+    ws_.sheet_properties.pageSetUpPr.fitToPage = True
+    ws_.print_options.horizontalCentered = True
+    ws_.page_margins.left = 0.25
+    ws_.page_margins.right = 0.25
+    ws_.page_margins.top = 0.35
+    ws_.page_margins.bottom = 0.35
+    ws_.page_margins.header = 0.15
+    ws_.page_margins.footer = 0.15
+    ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
+
+
 # -----------------------------
-# SEASON REPORT (EXCEL) — PRINT-STYLE FORMATTING
+# Build downloadable files
 # -----------------------------
 out = BytesIO()
 
@@ -2293,7 +2519,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                 return int((season_players.get(str(name), {}) or {}).get(GP_KEY, 0) or 0)
             except Exception:
                 return 0
-        df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
+        if "GP" not in df_export.columns:
+            df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
 
     # --- Build BIP + GB%/FB% (based on total BIP = GB + FB) ---
     if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
@@ -2316,7 +2543,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         # Drop raw GB/FB totals (we're showing GB%/FB% now)
         df_export = df_export.drop(columns=["GB", "FB"])
 
-        # Put columns in the order you want:
+        # Order columns
         cols = list(df_export.columns)
         gb_pos = [c for c in cols if str(c).startswith("GB-")]
         fb_pos = [c for c in cols if str(c).startswith("FB-")]
@@ -2324,7 +2551,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         fixed_lead = ["Player"] + (["GP"] if "GP" in cols else []) + ["GB%", "FB%"]
         rest = [c for c in cols if c not in fixed_lead and c not in gb_pos and c not in fb_pos]
 
-        # Add BIP at the end of FB block
+        # Add BIP at end of FB block
         df_export["BIP"] = bip_vals.astype(int)
 
         df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + rest]
@@ -2397,21 +2624,10 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         ws.column_dimensions[get_column_letter(player_col_idx)].width = min(max(max_len + 2, 12), 34)
 
     # Identify key columns
-    gbp_idx = None
-    fbp_idx = None
-    gp_idx = None
-    bip_idx = None
-
     headers = [str(ws.cell(row=2, column=j).value or "").strip() for j in range(1, ws.max_column + 1)]
-    for j, h in enumerate(headers, start=1):
-        if h == "GB%":
-            gbp_idx = j
-        elif h == "FB%":
-            fbp_idx = j
-        elif h == "GP":
-            gp_idx = j
-        elif h == "BIP":
-            bip_idx = j
+    gbp_idx = headers.index("GB%") + 1 if "GB%" in headers else None
+    fbp_idx = headers.index("FB%") + 1 if "FB%" in headers else None
+    gp_idx  = headers.index("GP") + 1  if "GP"  in headers else None
 
     # Format GB%/FB% as percent
     if gbp_idx:
@@ -2439,9 +2655,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             b = cell.border
             cell.border = Border(left=b.left, right=thick_side, top=b.top, bottom=b.bottom)
 
-    if fbp_idx:
-        _set_right_thick(fbp_idx)
-
     def _last_idx(prefix: str):
         last = None
         for j, h in enumerate(headers, start=1):
@@ -2452,6 +2665,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     gb_end = _last_idx("GB-")
     fb_end = _last_idx("FB-")
 
+    if fbp_idx:
+        _set_right_thick(fbp_idx)
     if gb_end:
         _set_right_thick(gb_end)
     if fb_end:
@@ -2465,49 +2680,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     gp_fill_11_15 = PatternFill("solid", fgColor="FFB266")
     gp_fill_16_19 = PatternFill("solid", fgColor="FF9933")
     gp_fill_20p   = PatternFill("solid", fgColor="F8696B")
-
-    pct_bins = [
-        (0.00, 0.05, None),
-        (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
-        (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
-        (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
-        (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
-        (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
-        (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
-        (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
-        (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
-        (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
-        (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
-        (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
-        (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
-        (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
-        (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
-        (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
-        (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
-        (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
-        (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
-        (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
-    ]
-
-    def _pct_fill(v):
-        if v is None or v == "":
-            return None
-        try:
-            x = float(v)
-        except Exception:
-            return None
-        if x <= 0:
-            return None
-        if x < 0:
-            x = 0.0
-        if x > 1:
-            x = 1.0
-        for lo, hi, fill in pct_bins:
-            if fill is None:
-                continue
-            if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
-                return fill
-        return None
 
     # GP heatmap
     if gp_idx:
@@ -2531,13 +2703,31 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                 cell.fill = gp_fill_1_5
 
     # % heatmap (GB-/FB- only)
+    def _pct_fill_team(v):
+        if v is None or v == "":
+            return None
+        try:
+            x = float(v)
+        except Exception:
+            return None
+        if x <= 0:
+            return None
+        if x > 1:
+            x = 1.0
+        for lo, hi, fill in _pct_bins_player:
+            if fill is None:
+                continue
+            if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
+                return fill
+        return None
+
     for r in range(3, ws.max_row + 1):
         for c in range(1, ws.max_column + 1):
             h = str(ws.cell(row=2, column=c).value or "").strip()
             if not (h.startswith("GB-") or h.startswith("FB-")):
                 continue
             cell = ws.cell(row=r, column=c)
-            f = _pct_fill(cell.value)
+            f = _pct_fill_team(cell.value)
             if f:
                 cell.fill = f
 
@@ -2550,7 +2740,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     except Exception:
         pass
 
-    # Print setup
+    # Print setup (Season)
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
@@ -2563,326 +2753,65 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws.page_margins.header = 0.15
     ws.page_margins.footer = 0.15
     ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
-    # --- helpers for player sheet names (must exist here) ---
-def _safe_sheet_name(name: str) -> str:
-    name = str(name or "").strip()
-    name = re.sub(r'[:\\/?*\[\]]', "", name)  # invalid Excel sheet chars
-    name = re.sub(r"\s+", " ", name)
-    return name[:31] if name else "Player"
 
-def _unique_sheet_name(wb, base: str) -> str:
-    if base not in wb.sheetnames:
-        return base
-    i = 2
-    while True:
-        suffix = f" {i}"
-        cand = (base[:31 - len(suffix)] + suffix)[:31]
-        if cand not in wb.sheetnames:
-            return cand
-        i += 1
+    # -----------------------------
+    # COACH NOTES BOX (Season sheet)
+    # -----------------------------
+    notes_box_text_local = str(notes_box_text or "").strip()
+    if notes_box_text_local:
+        top_row = ws.max_row + 6
+        left_col = 1
+        right_col = ws.max_column
+        box_height = 10
 
+        ws.merge_cells(
+            start_row=top_row,
+            start_column=left_col,
+            end_row=top_row + box_height - 1,
+            end_column=right_col,
+        )
 
-    # ==========================================================
-    # ✅ INSERTED: BUILD INDIVIDUAL PLAYER TABS (MUST BE INSIDE WRITER)
-    # ==========================================================
+        note_cell = ws.cell(row=top_row, column=left_col)
+        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text_local}"
+        note_cell.font = Font(size=12)
+        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+        for rr in range(top_row, top_row + box_height):
+            ws.row_dimensions[rr].height = 22
+
+        thick = Side(style="thick", color="000000")
+        for rr in range(top_row, top_row + box_height):
+            for cc in range(left_col, right_col + 1):
+                cur = ws.cell(row=rr, column=cc).border
+                ws.cell(row=rr, column=cc).border = Border(
+                    left=thick if cc == left_col else cur.left,
+                    right=thick if cc == right_col else cur.right,
+                    top=thick if rr == top_row else cur.top,
+                    bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
+                )
+
+    # -----------------------------
+    # INDIVIDUAL PLAYER TABS (inside writer)
+    # -----------------------------
     try:
-        roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str))
+        roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str).tolist())
     except Exception:
-        roster_source = list(df_export["Player"].astype(str)) if "Player" in df_export.columns else []
+        roster_source = list(df_export["Player"].astype(str).tolist()) if "Player" in df_export.columns else []
 
     active_for_tabs = sorted(set(roster_source), key=lambda x: str(x).lower())
 
     for player_name in active_for_tabs:
         stats = season_players.get(player_name, empty_stat_dict())
-
         base = _safe_sheet_name(player_name)
         sheet = _unique_sheet_name(writer.book, base)
-
         ws_player = writer.book.create_sheet(title=sheet)
         _build_player_scout_sheet(ws_player, player_name, stats)
 
-    # Debug (temporary)
-    st.write("DEBUG sheets RIGHT BEFORE writer closes:", writer.book.sheetnames)
-    st.write("DEBUG roster size RIGHT BEFORE writer closes:", len(list(current_roster)) if current_roster else 0)
-
-
- # -----------------------------
-# COACH NOTES BOX (EXCEL)
-# -----------------------------
-notes_box_text = locals().get("notes_box_text", "") or ""
-
-if notes_box_text:
-    top_row = ws.max_row + 6
-    left_col = 1
-    right_col = ws.max_column
-    box_height = 10
-
-    ws.merge_cells(
-        start_row=top_row,
-        start_column=left_col,
-        end_row=top_row + box_height - 1,
-        end_column=right_col,
-    )
-
-    note_cell = ws.cell(row=top_row, column=left_col)
-    note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-    note_cell.font = Font(size=12)  # size 12
-    note_cell.alignment = Alignment(wrap_text=True, vertical="top")
-
-    for rr in range(top_row, top_row + box_height):
-        ws.row_dimensions[rr].height = 22
-
-    thick = Side(style="thick", color="000000")
-    for rr in range(top_row, top_row + box_height):
-        for cc in range(left_col, right_col + 1):
-            cur = ws.cell(row=rr, column=cc).border
-            ws.cell(row=rr, column=cc).border = Border(
-                left=thick if cc == left_col else cur.left,
-                right=thick if cc == right_col else cur.right,
-                top=thick if rr == top_row else cur.top,
-                bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
-            )
-
-# ==========================================================
-# INDIVIDUAL PLAYER TABS (ACTIVE ROSTER ONLY)
-# - ALWAYS runs (not inside notes_box_text)
-# - One sheet per hitter
-# - Scouting-sheet layout (NO TABLE)
-# - Heatmap matches TEAM (orange → red)
-# ==========================================================
-
-from openpyxl.cell.cell import MergedCell
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
-def _safe_sheet_name(name: str) -> str:
-    name = str(name or "").strip()
-    name = re.sub(r'[:\\/?*\[\]]', "", name)
-    name = re.sub(r"\s+", " ", name)
-    return name[:31] if name else "Player"
-
-def _unique_sheet_name(wb, base: str) -> str:
-    if base not in wb.sheetnames:
-        return base
-    i = 2
-    while True:
-        suffix = f" {i}"
-        cand = (base[:31 - len(suffix)] + suffix)[:31]
-        if cand not in wb.sheetnames:
-            return cand
-        i += 1
-
-def _safe_float(x):
-    try:
-        return float(x)
-    except Exception:
-        return 0.0
-
-# --- orange → red bins (match TEAM heat map style) ---
-gb_bins = [
-    (0.00, 0.05, None),
-    (0.05, 0.15, PatternFill("solid", fgColor="FFE5CC")),
-    (0.15, 0.30, PatternFill("solid", fgColor="FFCC99")),
-    (0.30, 0.45, PatternFill("solid", fgColor="FFB266")),
-    (0.45, 0.60, PatternFill("solid", fgColor="FF7A45")),
-    (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),
-]
-fb_bins = gb_bins  # same palette for FB
-
-def _fill(v, bins):
-    x = _safe_float(v)
-    if x <= 0:
-        return None
-    if x > 1:
-        x = 1.0
-    for lo, hi, f in bins:
-        if f is None:
-            continue
-        if lo <= x < hi:
-            return f
-    return None
-
-# --- styles ---
-center = Alignment(horizontal="center", vertical="center")
-thin = Side(style="thin", color="000000")
-thick = Side(style="thick", color="000000")
-box = Border(left=thin, right=thin, top=thin, bottom=thin)
-thick_bottom = Border(bottom=thick)
-
-title_font = Font(bold=True, size=20)
-label_font = Font(bold=True, size=12)
-val_font = Font(bold=True, size=12)
-
-def _clear_sheet_safely(ws_):
-    try:
-        for rng in list(ws_.merged_cells.ranges):
-            ws_.unmerge_cells(str(rng))
-    except Exception:
-        pass
-    for r in range(1, 80):
-        for c in range(1, 30):
-            cell = ws_.cell(row=r, column=c)
-            if isinstance(cell, MergedCell):
-                continue
-            cell.value = None
-            cell.border = Border()
-            cell.fill = PatternFill()
-            cell.alignment = Alignment()
-
-def _merge_label(ws_, rng, text):
-    ws_.merge_cells(rng)
-    c = ws_[rng.split(":")[0]]
-    c.value = text
-    c.font = label_font
-    c.alignment = center
-    c.border = box
-
-def _set_pct_cell(ws_, addr, v, is_gb=True):
-    c = ws_[addr]
-    c.value = _safe_float(v)
-    c.number_format = "0%"
-    c.font = val_font
-    c.alignment = center
-    c.border = box
-    f = _fill(c.value, gb_bins if is_gb else fb_bins)
-    if f:
-        c.fill = f
-
-def _build_player_scout_sheet(ws_, player_name, stats):
-    gb = int(stats.get("GB", 0) or 0)
-    fb = int(stats.get("FB", 0) or 0)
-    bip = gb + fb
-
-    vals = {}
-    for ck in COMBO_KEYS:
-        raw = float(stats.get(ck, 0) or 0)
-        vals[ck] = (raw / bip) if bip else 0.0
-    vals["BIP"] = int(bip)
-
-    _clear_sheet_safely(ws_)
-
-    # widths
-    ws_.column_dimensions["A"].width = 5
-    ws_.column_dimensions["B"].width = 5
-    for col in ["C","D","E","F","G","H","I"]:
-        ws_.column_dimensions[col].width = 13
-
-    # heights
-    ws_.row_dimensions[1].height = 30
-    for rr in range(2, 19):
-        ws_.row_dimensions[rr].height = 20
-    ws_.row_dimensions[16].height = 10
-
-    # title
-    ws_.merge_cells("A1:I1")
-    t = ws_["A1"]
-    t.value = str(player_name)
-    t.font = title_font
-    t.alignment = center
-    t.border = thick_bottom
-
-    # CF
-    _merge_label(ws_, "E3:F3", "CF")
-    _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0), is_gb=True)
-    _set_pct_cell(ws_, "F4", vals.get("FB-CF", 0), is_gb=False)
-
-    # LF
-    _merge_label(ws_, "C5:D5", "LF")
-    _set_pct_cell(ws_, "C6", vals.get("GB-LF", 0), is_gb=True)
-    _set_pct_cell(ws_, "D6", vals.get("FB-LF", 0), is_gb=False)
-
-    # RF
-    _merge_label(ws_, "G5:H5", "RF")
-    _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0), is_gb=True)
-    _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0), is_gb=False)
-
-    # SS (MERGED E7:F7)
-    _merge_label(ws_, "E7:F7", "SS")
-    _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0), is_gb=True)
-    _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0), is_gb=False)
-
-    # 2B
-    ws_["G7"].value = "2B"
-    ws_["G7"].font = label_font
-    ws_["G7"].alignment = center
-    ws_["G7"].border = box
-    _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0), is_gb=True)
-    _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0), is_gb=False)
-
-    # 3B
-    _merge_label(ws_, "C9:D9", "3B")
-    _set_pct_cell(ws_, "C10", vals.get("GB-3B", 0), is_gb=True)
-    _set_pct_cell(ws_, "D10", vals.get("FB-3B", 0), is_gb=False)
-
-    # 1B
-    _merge_label(ws_, "G9:H9", "1B")
-    _set_pct_cell(ws_, "G10", vals.get("GB-1B", 0), is_gb=True)
-    _set_pct_cell(ws_, "H10", vals.get("FB-1B", 0), is_gb=False)
-
-    # P
-    _merge_label(ws_, "E11:F11", "P")
-    _set_pct_cell(ws_, "E12", vals.get("GB-P", 0), is_gb=True)
-    _set_pct_cell(ws_, "F12", vals.get("FB-P", 0), is_gb=False)
-
-    # divider row 16
-    for col in ["A","B","C","D","E","F","G","H","I"]:
-        cell = ws_[f"{col}16"]
-        cell.fill = PatternFill("solid", fgColor="000000")
-        cell.border = Border(top=thick, bottom=thick)
-
-    # BIP box
-    ws_.merge_cells("C17:D17")
-    b1 = ws_["C17"]
-    b1.value = "BIP"
-    b1.font = Font(bold=True, size=12)
-    b1.alignment = center
-    b1.fill = PatternFill("solid", fgColor="E5E7EB")
-    b1.border = box
-
-    ws_.merge_cells("C18:D18")
-    b2 = ws_["C18"]
-    b2.value = int(vals.get("BIP", 0) or 0)
-    b2.font = Font(bold=True, size=14)
-    b2.alignment = center
-    b2.border = box
-
-    # print setup
-    ws_.print_area = "A1:I40"
-    ws_.page_setup.orientation = ws_.ORIENTATION_PORTRAIT
-    ws_.page_setup.fitToWidth = 1
-    ws_.page_setup.fitToHeight = 1
-    ws_.sheet_properties.pageSetUpPr.fitToPage = True
-    ws_.print_options.horizontalCentered = True
-    ws_.page_margins.left = 0.25
-    ws_.page_margins.right = 0.25
-    ws_.page_margins.top = 0.35
-    ws_.page_margins.bottom = 0.35
-    ws_.page_margins.header = 0.15
-    ws_.page_margins.footer = 0.15
-    ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
-
-# roster fallback: if current_roster is empty, use players from df_export
-try:
-    roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str).tolist())
-except Exception:
-    roster_source = list(df_export["Player"].astype(str).tolist()) if "Player" in df_export.columns else []
-
-active_for_tabs = sorted(set(roster_source), key=lambda x: str(x).lower())
-
-for player_name in active_for_tabs:
-    stats = season_players.get(player_name, empty_stat_dict())
-    base = _safe_sheet_name(player_name)
-    sheet = _unique_sheet_name(writer.book, base)
-
-    ws_player = writer.book.create_sheet(title=sheet)
-    _build_player_scout_sheet(ws_player, player_name, stats)
-   
-
-         
-# ✅ AFTER writer closes: pull bytes
+# ✅ AFTER writer closes: pull bytes once
 out.seek(0)
 excel_bytes = out.getvalue()
 
-# Use the SAME formatted XLSX bytes for Google Sheets
+# Use SAME formatted XLSX bytes for Google Sheets upload
 gs_bytes = excel_bytes
 
 
@@ -2921,6 +2850,7 @@ with col_dl3:
     )
 
 
+
 # ✅ IMPORTANT: read bytes AFTER writer closes (after this with-block ends)
 out.seek(0)
 excel_bytes = out.getvalue()
@@ -2952,4 +2882,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
 
