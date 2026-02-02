@@ -2537,9 +2537,9 @@ def _pct_fill(v):
         return None
 
     # Apply GP heatmap only on GP column
-    if gp_idx:
-        for r in range(3, ws.max_row + 1):
-            cell = ws.cell(row=r, column=gp_idx)
+        if gp_idx:
+            for r in range(3, ws.max_row + 1):
+                cell = ws.cell(row=r, column=gp_idx)
             try:
                 v = float(cell.value or 0)
             except Exception:
@@ -2699,6 +2699,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
