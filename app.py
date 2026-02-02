@@ -296,9 +296,12 @@ TEAM_CFG = _load_team_cfg_from_file(TEAM_CODE) or {}
 # TERMS OF USE — HARD GATE (PAGE-LEVEL)
 # ===============================
 _TERMS_KEY = f"terms_accepted__{str(TEAM_CODE).strip().upper()}"
+_AGREE_KEY = f"terms_agree__{str(TEAM_CODE).strip().upper()}"
 
 if _TERMS_KEY not in st.session_state:
     st.session_state[_TERMS_KEY] = False
+if _AGREE_KEY not in st.session_state:
+    st.session_state[_AGREE_KEY] = False
 
 if not st.session_state[_TERMS_KEY]:
 
@@ -339,7 +342,7 @@ Access may be revoked immediately for violations without refund.
     st.markdown(
         f"""
         <div style="
-            max-height: 360px;
+            height: 360px;              /* fixed height (not max-height) */
             overflow-y: auto;
             padding: 16px;
             border: 1px solid #d1d5db;
@@ -353,17 +356,20 @@ Access may be revoked immediately for violations without refund.
         unsafe_allow_html=True,
     )
 
-    agree = st.checkbox("I have read and agree to the Terms of Use")
+    st.checkbox(
+        "I have read and agree to the Terms of Use",
+        key=_AGREE_KEY,
+    )
 
-    if st.button("Continue"):
-        if agree:
-            st.session_state[_TERMS_KEY] = True
-            st.rerun()
-        else:
-            st.warning("You must agree before continuing.")
+    # Button is disabled until checkbox is checked (prevents warning layout jump too)
+    st.button(
+        "Continue",
+        disabled=not st.session_state[_AGREE_KEY],
+        key=f"terms_continue__{str(TEAM_CODE).strip().upper()}",
+        on_click=lambda: st.session_state.__setitem__(_TERMS_KEY, True),
+    )
 
     st.stop()
-
 
 
 # -----------------------------
@@ -2664,6 +2670,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
