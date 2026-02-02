@@ -2670,17 +2670,17 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         sheet = _unique_sheet_name(writer.book, base)
         
 # ==========================================================
-# INDIVIDUAL PLAYER TABS — SCOUTING SHEET (NO TABLE)
-# Orange → Red heatmap (matches TEAM heat map)
+# INDIVIDUAL PLAYER TABS (ACTIVE ROSTER ONLY)
+# - Tab 1: Season (team)
+# - Tabs 2+: one sheet per active hitter, even if 0 BIP
+# - Scouting-sheet layout (NO TABLE)
+# - Heatmap matches TEAM (orange → red)
 # ==========================================================
 
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-# -------------------------
-# helpers
-# -------------------------
 def _safe_sheet_name(name: str) -> str:
     name = str(name or "").strip()
     name = re.sub(r'[:\\/?*\[\]]', "", name)
@@ -2704,19 +2704,16 @@ def _safe_float(x):
     except Exception:
         return 0.0
 
-# --- ORANGE → RED HEAT MAP BINS (matches TEAM heat map) ---
-heat_bins_orange_red = [
+# --- orange → red bins (match TEAM heat map style) ---
+gb_bins = [
     (0.00, 0.05, None),
-    (0.05, 0.15, PatternFill("solid", fgColor="FFE5CC")),  # light orange
-    (0.15, 0.30, PatternFill("solid", fgColor="FFCC99")),  # orange
-    (0.30, 0.45, PatternFill("solid", fgColor="FFB266")),  # deeper orange
-    (0.45, 0.60, PatternFill("solid", fgColor="FF7A45")),  # orange-red
-    (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),  # dark red
+    (0.05, 0.15, PatternFill("solid", fgColor="FFE5CC")),
+    (0.15, 0.30, PatternFill("solid", fgColor="FFCC99")),
+    (0.30, 0.45, PatternFill("solid", fgColor="FFB266")),
+    (0.45, 0.60, PatternFill("solid", fgColor="FF7A45")),
+    (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),
 ]
-
-# Keep these names so your existing code still works:
-gb_bins = heat_bins_orange_red
-fb_bins = heat_bins_orange_red
+fb_bins = gb_bins  # same palette for FB
 
 def _fill(v, bins):
     x = _safe_float(v)
@@ -2731,209 +2728,191 @@ def _fill(v, bins):
             return f
     return None
 
-def _set_pct_cell(ws, addr, value, is_gb=True):
-    """
-    IMPORTANT: keep 'is_gb' parameter so existing calls don't break.
-    We still shade using orange→red for BOTH GB and FB to match team heat map.
-    """
-    cell = ws[addr]
-    v = _safe_float(value)
+# --- common styles ---
+center = Alignment(horizontal="center", vertical="center")
+left = Alignment(horizontal="left", vertical="center")
 
-    # write percent
-    cell.value = round(v * 100)
-    cell.number_format = '0"%"'
+thin = Side(style="thin", color="000000")
+thick = Side(style="thick", color="000000")
+box = Border(left=thin, right=thin, top=thin, bottom=thin)
+thick_bottom = Border(bottom=thick)
 
-    # orange→red fill (same bins for GB/FB)
-    bins = gb_bins if is_gb else fb_bins
-    fill = _fill(v, bins)
-    if fill:
-        cell.fill = fill
+title_font = Font(bold=True, size=20)
+label_font = Font(bold=True, size=12)
+val_font = Font(bold=True, size=12)
 
+def _clear_sheet_safely(ws_):
+    # unmerge everything first
+    try:
+        for rng in list(ws_.merged_cells.ranges):
+            ws_.unmerge_cells(str(rng))
+    except Exception:
+        pass
 
-        # --- common styles ---
-        center = Alignment(horizontal="center", vertical="center")
-        left = Alignment(horizontal="left", vertical="center")
-        thin = Side(style="thin", color="000000")
-        thick = Side(style="thick", color="000000")
-        box = Border(left=thin, right=thin, top=thin, bottom=thin)
-        thick_bottom = Border(bottom=thick)
+    # clear cells BUT skip merged-cell objects (prevents AttributeError)
+    for r in range(1, 80):
+        for c in range(1, 30):
+            cell = ws_.cell(row=r, column=c)
+            if isinstance(cell, MergedCell):
+                continue
+            cell.value = None
+            cell.border = Border()
+            cell.fill = PatternFill()
+            cell.alignment = Alignment()
 
-        title_font = Font(bold=True, size=20)
-        label_font = Font(bold=True, size=12)
-        val_font = Font(bold=True, size=12)
+def _merge_label(ws_, rng, text):
+    ws_.merge_cells(rng)
+    c = ws_[rng.split(":")[0]]
+    c.value = text
+    c.font = label_font
+    c.alignment = center
+    c.border = box
 
-        def _clear_sheet_safely(ws_):
-            # unmerge everything first
-            try:
-                for rng in list(ws_.merged_cells.ranges):
-                    ws_.unmerge_cells(str(rng))
-            except Exception:
-                pass
+def _set_pct_cell(ws_, addr, v, is_gb=True):
+    c = ws_[addr]
+    c.value = _safe_float(v)
+    c.number_format = "0%"
+    c.font = val_font
+    c.alignment = center
+    c.border = box
+    f = _fill(c.value, gb_bins if is_gb else fb_bins)
+    if f:
+        c.fill = f
 
-            # clear cells BUT skip merged-cell objects (prevents your AttributeError)
-            for r in range(1, 80):
-                for c in range(1, 30):
-                    cell = ws_.cell(row=r, column=c)
-                    if isinstance(cell, MergedCell):
-                        continue
-                    cell.value = None
-                    cell.border = Border()
-                    cell.fill = PatternFill()
-                    cell.alignment = Alignment()
+def _build_player_scout_sheet(ws_, player_name, stats):
+    # compute BIP + percents (decimals like 0.07 for 7%)
+    gb = int(stats.get("GB", 0) or 0)
+    fb = int(stats.get("FB", 0) or 0)
+    bip = gb + fb
 
-        def _merge_label(ws_, rng, text):
-            ws_.merge_cells(rng)
-            c = ws_[rng.split(":")[0]]
-            c.value = text
-            c.font = label_font
-            c.alignment = center
-            c.border = box
+    vals = {}
+    for ck in COMBO_KEYS:
+        raw = float(stats.get(ck, 0) or 0)
+        vals[ck] = (raw / bip) if bip else 0.0
+    vals["BIP"] = int(bip)
 
-        def _set_pct_cell(ws_, addr, v, is_gb=True):
-            c = ws_[addr]
-            c.value = _safe_float(v)
-            c.number_format = "0%"
-            c.font = val_font
-            c.alignment = center
-            c.border = box
-            f = _fill(c.value, gb_bins if is_gb else fb_bins)
-            if f:
-                c.fill = f
+    # wipe sheet clean
+    _clear_sheet_safely(ws_)
 
-        def _build_player_scout_sheet(ws_, player_name, stats):
-            # compute BIP + percents (these are decimals like 0.07 for 7%)
-            gb = int(stats.get("GB", 0) or 0)
-            fb = int(stats.get("FB", 0) or 0)
-            bip = gb + fb
+    # column widths
+    ws_.column_dimensions["A"].width = 5
+    ws_.column_dimensions["B"].width = 5
+    for col in ["C","D","E","F","G","H","I"]:
+        ws_.column_dimensions[col].width = 13
 
-            vals = {}
-            for ck in COMBO_KEYS:
-                raw = float(stats.get(ck, 0) or 0)
-                vals[ck] = (raw / bip) if bip else 0.0
-            vals["BIP"] = int(bip)
+    # row heights
+    ws_.row_dimensions[1].height = 30
+    for rr in range(2, 19):
+        ws_.row_dimensions[rr].height = 20
+    ws_.row_dimensions[16].height = 10  # divider
 
-            # wipe sheet clean
-            _clear_sheet_safely(ws_)
+    # TITLE (A1:I1)
+    ws_.merge_cells("A1:I1")
+    t = ws_["A1"]
+    t.value = str(player_name)
+    t.font = title_font
+    t.alignment = center
+    t.border = thick_bottom
 
-            # column widths (match your print layout)
-            ws_.column_dimensions["A"].width = 5
-            ws_.column_dimensions["B"].width = 5
-            for col in ["C","D","E","F","G","H","I"]:
-                ws_.column_dimensions[col].width = 13
+    # =========================
+    # SPRAY CHART (exact cells)
+    # =========================
+    # CF
+    _merge_label(ws_, "E3:F3", "CF")
+    _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0), is_gb=True)
+    _set_pct_cell(ws_, "F4", vals.get("FB-CF", 0), is_gb=False)
 
-            # row heights
-            ws_.row_dimensions[1].height = 30
-            for rr in range(2, 19):
-                ws_.row_dimensions[rr].height = 20
-            ws_.row_dimensions[16].height = 10  # divider
+    # LF
+    _merge_label(ws_, "C5:D5", "LF")
+    _set_pct_cell(ws_, "C6", vals.get("GB-LF", 0), is_gb=True)
+    _set_pct_cell(ws_, "D6", vals.get("FB-LF", 0), is_gb=False)
 
-            # TITLE (A1:I1)
-            ws_.merge_cells("A1:I1")
-            t = ws_["A1"]
-            t.value = str(player_name)
-            t.font = title_font
-            t.alignment = center
-            t.border = thick_bottom
+    # RF
+    _merge_label(ws_, "G5:H5", "RF")
+    _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0), is_gb=True)
+    _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0), is_gb=False)
 
-            # =========================
-            # SPRAY CHART (exact cells)
-            # =========================
-            # CF
-            _merge_label(ws_, "E3:F3", "CF")
-            _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0), is_gb=True)
-            _set_pct_cell(ws_, "F4", vals.get("FB-CF", 0), is_gb=False)
+    # SS (MERGED like CF/LF/RF)
+    _merge_label(ws_, "E7:F7", "SS")
+    _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0), is_gb=True)
+    _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0), is_gb=False)
 
-            # LF
-            _merge_label(ws_, "C5:D5", "LF")
-            _set_pct_cell(ws_, "C6", vals.get("GB-LF", 0), is_gb=True)
-            _set_pct_cell(ws_, "D6", vals.get("FB-LF", 0), is_gb=False)
+    # 2B
+    ws_["G7"].value = "2B"
+    ws_["G7"].font = label_font
+    ws_["G7"].alignment = center
+    ws_["G7"].border = box
+    _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0), is_gb=True)
+    _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0), is_gb=False)
 
-            # RF
-            _merge_label(ws_, "G5:H5", "RF")
-            _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0), is_gb=True)
-            _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0), is_gb=False)
+    # 3B
+    _merge_label(ws_, "C9:D9", "3B")
+    _set_pct_cell(ws_, "C10", vals.get("GB-3B", 0), is_gb=True)
+    _set_pct_cell(ws_, "D10", vals.get("FB-3B", 0), is_gb=False)
 
-            # SS
-            _merge_label(ws_, "E7:F7", "SS")
-            _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0), is_gb=True)
-            _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0), is_gb=False)
+    # 1B
+    _merge_label(ws_, "G9:H9", "1B")
+    _set_pct_cell(ws_, "G10", vals.get("GB-1B", 0), is_gb=True)
+    _set_pct_cell(ws_, "H10", vals.get("FB-1B", 0), is_gb=False)
 
-            # 2B label + values
-            ws_["G7"].value = "2B"
-            ws_["G7"].font = label_font
-            ws_["G7"].alignment = center
-            ws_["G7"].border = box
-            _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0), is_gb=True)
-            _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0), is_gb=False)
+    # P
+    _merge_label(ws_, "E11:F11", "P")
+    _set_pct_cell(ws_, "E12", vals.get("GB-P", 0), is_gb=True)
+    _set_pct_cell(ws_, "F12", vals.get("FB-P", 0), is_gb=False)
 
-            # 3B
-            _merge_label(ws_, "C9:D9", "3B")
-            _set_pct_cell(ws_, "C10", vals.get("GB-3B", 0), is_gb=True)
-            _set_pct_cell(ws_, "D10", vals.get("FB-3B", 0), is_gb=False)
+    # C (optional; shows 0% if not present)
+    _merge_label(ws_, "E13:F13", "C")
+    _set_pct_cell(ws_, "E14", vals.get("GB-C", 0), is_gb=True)
+    _set_pct_cell(ws_, "F14", vals.get("FB-C", 0), is_gb=False)
 
-            # 1B
-            _merge_label(ws_, "G9:H9", "1B")
-            _set_pct_cell(ws_, "G10", vals.get("GB-1B", 0), is_gb=True)
-            _set_pct_cell(ws_, "H10", vals.get("FB-1B", 0), is_gb=False)
+    # divider row 16 (A–I)
+    for col in ["A","B","C","D","E","F","G","H","I"]:
+        cell = ws_[f"{col}16"]
+        cell.fill = PatternFill("solid", fgColor="000000")
+        cell.border = Border(top=thick, bottom=thick)
 
-            # P
-            _merge_label(ws_, "E11:F11", "P")
-            _set_pct_cell(ws_, "E12", vals.get("GB-P", 0), is_gb=True)
-            _set_pct_cell(ws_, "F12", vals.get("FB-P", 0), is_gb=False)
+    # BIP box (C17:D18)
+    ws_.merge_cells("C17:D17")
+    b1 = ws_["C17"]
+    b1.value = "BIP"
+    b1.font = Font(bold=True, size=12)
+    b1.alignment = center
+    b1.fill = PatternFill("solid", fgColor="E5E7EB")
+    b1.border = box
 
-            # C  (NOTE: this uses GB-C and FB-C — if those columns don’t exist in COMBO_KEYS,
-            # they will just show 0% and that’s fine)
-            _merge_label(ws_, "E13:F13", "C")
-            _set_pct_cell(ws_, "E14", vals.get("GB-C", 0), is_gb=True)
-            _set_pct_cell(ws_, "F14", vals.get("FB-C", 0), is_gb=False)
+    ws_.merge_cells("C18:D18")
+    b2 = ws_["C18"]
+    b2.value = int(vals.get("BIP", 0) or 0)
+    b2.font = Font(bold=True, size=14)
+    b2.alignment = center
+    b2.border = box
 
-            # divider row 16 (A–I)
-            for col in ["A","B","C","D","E","F","G","H","I"]:
-                cell = ws_[f"{col}16"]
-                cell.fill = PatternFill("solid", fgColor="000000")
-                cell.border = Border(top=thick, bottom=thick)
+    # Print setup (single page)
+    ws_.print_area = "A1:I40"
+    ws_.page_setup.orientation = ws_.ORIENTATION_PORTRAIT
+    ws_.page_setup.fitToWidth = 1
+    ws_.page_setup.fitToHeight = 1
+    ws_.sheet_properties.pageSetUpPr.fitToPage = True
+    ws_.print_options.horizontalCentered = True
+    ws_.page_margins.left = 0.25
+    ws_.page_margins.right = 0.25
+    ws_.page_margins.top = 0.35
+    ws_.page_margins.bottom = 0.35
+    ws_.page_margins.header = 0.15
+    ws_.page_margins.footer = 0.15
+    ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
 
-            # BIP box (C17:D18)
-            ws_.merge_cells("C17:D17")
-            b1 = ws_["C17"]
-            b1.value = "BIP"
-            b1.font = Font(bold=True, size=12)
-            b1.alignment = center
-            b1.fill = PatternFill("solid", fgColor="E5E7EB")
-            b1.border = box
+# Build one sheet per active roster hitter (ONCE)
+active_for_tabs = sorted(list(current_roster), key=lambda x: str(x).lower())
 
-            ws_.merge_cells("C18:D18")
-            b2 = ws_["C18"]
-            b2.value = int(vals.get("BIP", 0) or 0)
-            b2.font = Font(bold=True, size=14)
-            b2.alignment = center
-            b2.border = box
+for player_name in active_for_tabs:
+    stats = season_players.get(player_name, empty_stat_dict())
+    base = _safe_sheet_name(player_name)
+    sheet = _unique_sheet_name(writer.book, base)
 
+    ws_player = writer.book.create_sheet(title=sheet)
+    _build_player_scout_sheet(ws_player, player_name, stats)
 
-            # Print setup (single page)
-            ws_.print_area = "A1:I40"
-            ws_.page_setup.orientation = ws_.ORIENTATION_PORTRAIT
-            ws_.page_setup.fitToWidth = 1
-            ws_.page_setup.fitToHeight = 1
-            ws_.sheet_properties.pageSetUpPr.fitToPage = True
-            ws_.print_options.horizontalCentered = True
-            ws_.page_margins.left = 0.25
-            ws_.page_margins.right = 0.25
-            ws_.page_margins.top = 0.35
-            ws_.page_margins.bottom = 0.35
-            ws_.page_margins.header = 0.15
-            ws_.page_margins.footer = 0.15
-            ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
-
-        # Build one sheet per active roster hitter
-        active_for_tabs = sorted(list(current_roster), key=lambda x: str(x).lower())
-        for player_name in active_for_tabs:
-            stats = season_players.get(player_name, empty_stat_dict())
-            base = _safe_sheet_name(player_name)
-            sheet = _unique_sheet_name(writer.book, base)
-
-            ws_player = writer.book.create_sheet(title=sheet)
-            _build_player_scout_sheet(ws_player, player_name, stats)
         
 
          
@@ -3011,6 +2990,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
