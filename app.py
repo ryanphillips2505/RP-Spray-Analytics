@@ -2617,45 +2617,46 @@ ws.page_margins.footer = 0.15
 ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
 
 
-    # -----------------------------
-    # COACH NOTES BOX (EXCEL)
-    # -----------------------------
-    if notes_box_text:
-        top_row = ws.max_row + 6
-        left_col = 1
-        right_col = ws.max_column
-        box_height = 10
+# -----------------------------
+# COACH NOTES BOX (EXCEL)
+# -----------------------------
+if notes_box_text:
+    top_row = ws.max_row + 6
+    left_col = 1
+    right_col = ws.max_column
+    box_height = 10
 
-        ws.merge_cells(
-            start_row=top_row,
-            start_column=left_col,
-            end_row=top_row + box_height - 1,
-            end_column=right_col,
-        )
+    ws.merge_cells(
+        start_row=top_row,
+        start_column=left_col,
+        end_row=top_row + box_height - 1,
+        end_column=right_col,
+    )
 
-        note_cell = ws.cell(row=top_row, column=left_col)
-        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-        note_cell.font = Font(size=14)
-        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
+    note_cell = ws.cell(row=top_row, column=left_col)
+    note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
+    note_cell.font = Font(size=14)
+    note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        for r in range(top_row, top_row + box_height):
-            ws.row_dimensions[r].height = 22
+    for r in range(top_row, top_row + box_height):
+        ws.row_dimensions[r].height = 22
 
-        thick = Side(style="thick", color="000000")
-        for r in range(top_row, top_row + box_height):
-            for c in range(left_col, right_col + 1):
-                cur = ws.cell(row=r, column=c).border
-                ws.cell(row=r, column=c).border = Border(
-                    left=thick if c == left_col else cur.left,
-                    right=thick if c == right_col else cur.right,
-                    top=thick if r == top_row else cur.top,
-                    bottom=thick if r == top_row + box_height - 1 else cur.bottom,
-                )
+    thick = Side(style="thick", color="000000")
+    for r in range(top_row, top_row + box_height):
+        for c in range(left_col, right_col + 1):
+            cur = ws.cell(row=r, column=c).border
+            ws.cell(row=r, column=c).border = Border(
+                left=thick if c == left_col else cur.left,
+                right=thick if c == right_col else cur.right,
+                top=thick if r == top_row else cur.top,
+                bottom=thick if r == top_row + box_height - 1 else cur.bottom,
+            )
 
 excel_bytes = out.getvalue()
 
 # Use the SAME formatted XLSX bytes for Google Sheets
 gs_bytes = excel_bytes
+
 
 with st.container():
     col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1], gap="small")
@@ -2716,6 +2717,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
