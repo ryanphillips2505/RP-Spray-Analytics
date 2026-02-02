@@ -2834,11 +2834,8 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             _set_pct_cell(ws_, "G6", vals.get("GB-RF", 0), is_gb=True)
             _set_pct_cell(ws_, "H6", vals.get("FB-RF", 0), is_gb=False)
 
-            # SS label + values
-            ws_["E7"].value = "SS"
-            ws_["E7"].font = label_font
-            ws_["E7"].alignment = center
-            ws_["E7"].border = box
+            # SS
+            _merge_label(ws_, "E7:F7", "SS")
             _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0), is_gb=True)
             _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0), is_gb=False)
 
@@ -2995,6 +2992,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
