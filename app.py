@@ -2565,39 +2565,39 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
 
     # -----------------------------
-    # COACH NOTES BOX (EXCEL)
-    # -----------------------------
-    if notes_box_text:
-        top_row = ws.max_row + 6
-        left_col = 1
-        right_col = ws.max_column
-        box_height = 10
+# COACH NOTES BOX (EXCEL)
+# -----------------------------
+if notes_box_text:
+    top_row = ws.max_row + 6
+    left_col = 1
+    right_col = ws.max_column
+    box_height = 10
 
-        ws.merge_cells(
-            start_row=top_row,
-            start_column=left_col,
-            end_row=top_row + box_height - 1,
-            end_column=right_col,
-        )
+    ws.merge_cells(
+        start_row=top_row,
+        start_column=left_col,
+        end_row=top_row + box_height - 1,
+        end_column=right_col,
+    )
 
-        note_cell = ws.cell(row=top_row, column=left_col)
-        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-        note_cell.font = Font(size=12)  # size 12
-        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
+    note_cell = ws.cell(row=top_row, column=left_col)
+    note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
+    note_cell.font = Font(size=12)  # size 12
+    note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        for rr in range(top_row, top_row + box_height):
-            ws.row_dimensions[rr].height = 22
+    for rr in range(top_row, top_row + box_height):
+        ws.row_dimensions[rr].height = 22
 
-        thick = Side(style="thick", color="000000")
-        for rr in range(top_row, top_row + box_height):
-            for cc in range(left_col, right_col + 1):
-                cur = ws.cell(row=rr, column=cc).border
-                ws.cell(row=rr, column=cc).border = Border(
-                    left=thick if cc == left_col else cur.left,
-                    right=thick if cc == right_col else cur.right,
-                    top=thick if rr == top_row else cur.top,
-                    bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
-                )
+    thick = Side(style="thick", color="000000")
+    for rr in range(top_row, top_row + box_height):
+        for cc in range(left_col, right_col + 1):
+            cur = ws.cell(row=rr, column=cc).border
+            ws.cell(row=rr, column=cc).border = Border(
+                left=thick if cc == left_col else cur.left,
+                right=thick if cc == right_col else cur.right,
+                top=thick if rr == top_row else cur.top,
+                bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
+            )
      # ==========================================================
     # INDIVIDUAL PLAYER TABS (ACTIVE ROSTER ONLY)
     # - Tab 1: Season (team)
@@ -2990,124 +2990,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
