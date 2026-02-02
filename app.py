@@ -2344,12 +2344,15 @@ def _pct_fill_player(v):
 _center = Alignment(horizontal="center", vertical="center")
 _thin = Side(style="thin", color="000000")
 _thick = Side(style="thick", color="000000")
-_box = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+
+_box_thin  = Border(left=_thin,  right=_thin,  top=_thin,  bottom=_thin)
+_box_thick = Border(left=_thick, right=_thick, top=_thick, bottom=_thick)
 _thick_bottom = Border(bottom=_thick)
 
 _title_font = Font(bold=True, size=20)
 _label_font = Font(bold=True, size=12)
-_val_font = Font(bold=True, size=12)
+_val_font   = Font(bold=True, size=12)
+_gbfb_font  = Font(bold=True, size=11)
 
 def _clear_sheet_safely(ws_):
     try:
@@ -2374,7 +2377,7 @@ def _merge_label(ws_, rng, text):
     c.value = text
     c.font = _label_font
     c.alignment = _center
-    c.border = _box
+    c.border = _box_thin
 
 def _set_pct_cell(ws_, addr, v):
     c = ws_[addr]
@@ -2382,10 +2385,33 @@ def _set_pct_cell(ws_, addr, v):
     c.number_format = "0%"
     c.font = _val_font
     c.alignment = _center
-    c.border = _box
+    c.border = _box_thick  # ✅ THICK border for data cells
     f = _pct_fill_player(c.value)
     if f:
         c.fill = f
+
+def _set_gbfb_labels(ws_):
+    """
+    ✅ One clean GB/FB legend row that aligns with ALL data columns:
+    - GB columns: C, E, G
+    - FB columns: D, F, H
+    """
+    # (Optional) give row 2 a little height so labels breathe
+    ws_.row_dimensions[2].height = 18
+
+    pairs = [("C", "D"), ("E", "F"), ("G", "H")]
+    for gb_col, fb_col in pairs:
+        gb_cell = ws_[f"{gb_col}2"]
+        fb_cell = ws_[f"{fb_col}2"]
+
+        gb_cell.value = "GB"
+        fb_cell.value = "FB"
+
+        for cell in (gb_cell, fb_cell):
+            cell.font = _gbfb_font
+            cell.alignment = _center
+            # subtle thin border is fine here (not “data”), but you can make thick if you want
+            cell.border = _box_thin
 
 def _build_player_scout_sheet(ws_, player_name, stats):
     gb = int(stats.get("GB", 0) or 0)
@@ -2420,6 +2446,9 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     t.alignment = _center
     t.border = _thick_bottom
 
+    # ✅ Add GB / FB labels (global legend row)
+    _set_gbfb_labels(ws_)
+
     # CF
     _merge_label(ws_, "E3:F3", "CF")
     _set_pct_cell(ws_, "E4", vals.get("GB-CF", 0))
@@ -2440,11 +2469,12 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     _set_pct_cell(ws_, "E8", vals.get("GB-SS", 0))
     _set_pct_cell(ws_, "F8", vals.get("FB-SS", 0))
 
-    # 2B
+    # 2B (label in G7, values in G8/H8)
     ws_["G7"].value = "2B"
     ws_["G7"].font = _label_font
     ws_["G7"].alignment = _center
-    ws_["G7"].border = _box
+    ws_["G7"].border = _box_thin
+    ws_["H7"].border = _box_thin  # keep the right cell outlined too
     _set_pct_cell(ws_, "G8", vals.get("GB-2B", 0))
     _set_pct_cell(ws_, "H8", vals.get("FB-2B", 0))
 
@@ -2469,21 +2499,23 @@ def _build_player_scout_sheet(ws_, player_name, stats):
         cell.fill = PatternFill("solid", fgColor="000000")
         cell.border = Border(top=_thick, bottom=_thick)
 
-    # BIP box
+    # BIP box (make it thick, since it’s data)
     ws_.merge_cells("C17:D17")
     b1 = ws_["C17"]
     b1.value = "BIP"
     b1.font = Font(bold=True, size=12)
     b1.alignment = _center
     b1.fill = PatternFill("solid", fgColor="E5E7EB")
-    b1.border = _box
+    b1.border = _box_thick
+    ws_["D17"].border = _box_thick
 
     ws_.merge_cells("C18:D18")
     b2 = ws_["C18"]
     b2.value = int(vals.get("BIP", 0) or 0)
     b2.font = Font(bold=True, size=14)
     b2.alignment = _center
-    b2.border = _box
+    b2.border = _box_thick
+    ws_["D18"].border = _box_thick
 
     # print setup
     ws_.print_area = "A1:I40"
@@ -2499,6 +2531,7 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     ws_.page_margins.header = 0.15
     ws_.page_margins.footer = 0.15
     ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
+
 
 
 # -----------------------------
@@ -2882,6 +2915,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
