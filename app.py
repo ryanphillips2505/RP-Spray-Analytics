@@ -2277,14 +2277,9 @@ out = BytesIO()
 
 # -----------------------------
 # SEASON REPORT (EXCEL) — PRINT-STYLE FORMATTING
-#   - Row 1: Team Name header (merged, 28pt)
-#   - Row 2: Column headers (12pt)
-#   - Rows 3+: Player rows (35 height, 12pt; Player bold)
-#   - GB/FB totals converted to percentages (GB% / FB%) and excluded from heatmap
-#   - Discrete "real heat map" bins for remaining numeric stats
-#   - Thick vertical borders separating GB block, FB block, RUN block
-#   - Watermark via print header
 # -----------------------------
+out = BytesIO()
+
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
 
@@ -2301,7 +2296,6 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
 
     # --- Build BIP + GB%/FB% (based on total BIP = GB + FB) ---
-    # NOTE: Your df_season currently has GB and FB totals present before COMBO columns.
     if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
         gb_vals = pd.to_numeric(df_export["GB"], errors="coerce").fillna(0)
         fb_vals = pd.to_numeric(df_export["FB"], errors="coerce").fillna(0)
@@ -2319,21 +2313,17 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                 num = pd.to_numeric(df_export[c], errors="coerce").fillna(0)
                 df_export[c] = (num / denom).fillna(0)
 
-        # Drop raw GB/FB totals (we're showing GB%/FB% now)
+        # Drop raw GB/FB totals
         df_export = df_export.drop(columns=["GB", "FB"])
 
-        # Put columns in the order you want:
-        # Player, GP, GB%, FB%, GB-*, FB-*, BIP
         cols = list(df_export.columns)
-
         gb_pos = [c for c in cols if str(c).startswith("GB-")]
         fb_pos = [c for c in cols if str(c).startswith("FB-")]
 
-        # Keep any other columns (if they exist) after BIP
         fixed_lead = ["Player"] + (["GP"] if "GP" in cols else []) + ["GB%", "FB%"]
         rest = [c for c in cols if c not in fixed_lead and c not in gb_pos and c not in fb_pos]
 
-        # Add BIP at the end of FB block (immediately after FB-P)
+        # Add BIP at the end of FB block
         df_export["BIP"] = bip_vals.astype(int)
 
         df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + rest]
@@ -2446,18 +2436,11 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         for r in range(2, ws.max_row + 1):
             cell = ws.cell(row=r, column=col_idx)
             b = cell.border
-            cell.border = Border(
-                left=b.left,
-                right=thick_side,
-                top=b.top,
-                bottom=b.bottom,
-            )
+            cell.border = Border(left=b.left, right=thick_side, top=b.top, bottom=b.bottom)
 
-    # Thick vertical border after FB% (same as before)
     if fbp_idx:
         _set_right_thick(fbp_idx)
 
-    # Thick border after last GB- and last FB-
     def _last_idx(prefix: str):
         last = None
         for j, h in enumerate(headers, start=1):
@@ -2471,231 +2454,156 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     if gb_end:
         _set_right_thick(gb_end)
     if fb_end:
-        _set_right_thick(fb_end)  # this becomes the thick border immediately LEFT of BIP
+        _set_right_thick(fb_end)
 
     # -----------------------------
-# HEATMAPS
-#   1) GP numeric heatmap (keep your existing scheme)
-#   2) Positional % heatmap (percent bins)
-#   NO heatmap on GB% / FB% / BIP
-# -----------------------------
+    # HEATMAPS
+    # -----------------------------
+    gp_fill_1_5   = PatternFill("solid", fgColor="FFE5CC")
+    gp_fill_6_10  = PatternFill("solid", fgColor="FFCC99")
+    gp_fill_11_15 = PatternFill("solid", fgColor="FFB266")
+    gp_fill_16_19 = PatternFill("solid", fgColor="FF9933")
+    gp_fill_20p   = PatternFill("solid", fgColor="F8696B")
 
-# GP numeric heatmap fills (same scheme you had)
-gp_fill_1_5   = PatternFill("solid", fgColor="FFE5CC")
-gp_fill_6_10  = PatternFill("solid", fgColor="FFCC99")
-gp_fill_11_15 = PatternFill("solid", fgColor="FFB266")
-gp_fill_16_19 = PatternFill("solid", fgColor="FF9933")
-gp_fill_20p   = PatternFill("solid", fgColor="F8696B")
+    pct_bins = [
+        (0.00, 0.05, None),
+        (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
+        (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
+        (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
+        (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
+        (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
+        (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
+        (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
+        (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
+        (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
+        (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
+        (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
+        (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
+        (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
+        (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
+        (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
+        (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
+        (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
+        (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
+        (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
+    ]
 
-# ------------------------------------
-# PERCENT HEATMAP (GB-* / FB-* columns only)
-# 0–5% = white, then every .05 darker
-# ------------------------------------
-pct_bins = [
-    (0.00, 0.05, None),
-    (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
-    (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
-    (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
-    (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
-    (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
-    (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
-    (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
-    (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
-    (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
-    (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
-    (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
-    (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
-    (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
-    (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
-    (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
-    (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
-    (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
-    (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
-    (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
-]
-
-def _pct_fill(v):
-    if v is None or v == "":
-        return None
-
-    # handle strings like "16%"
-    if isinstance(v, str):
-        s = v.strip().replace("%", "")
-        if s == "":
+    def _pct_fill(v):
+        if v is None or v == "":
             return None
-        try:
-            x = float(s) / 100.0
-        except Exception:
-            return None
-    else:
         try:
             x = float(v)
         except Exception:
             return None
-        if x > 1.0:
-            x = x / 100.0
+        if x <= 0:
+            return None
+        if x < 0:
+            x = 0.0
+        if x > 1:
+            x = 1.0
+        for lo, hi, fill in pct_bins:
+            if fill is None:
+                continue
+            if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
+                return fill
+        return None
 
-    # clamp
-    if x < 0:
-        x = 0.0
-    if x > 1:
-        x = 1.0
+    # GP heatmap
+    if gp_idx:
+        for r in range(3, ws.max_row + 1):
+            cell = ws.cell(row=r, column=gp_idx)
+            try:
+                v = float(cell.value or 0)
+            except Exception:
+                continue
+            if v <= 0:
+                continue
+            if v >= 20:
+                cell.fill = gp_fill_20p
+            elif 16 <= v <= 19:
+                cell.fill = gp_fill_16_19
+            elif 11 <= v <= 15:
+                cell.fill = gp_fill_11_15
+            elif 6 <= v <= 10:
+                cell.fill = gp_fill_6_10
+            elif 1 <= v <= 5:
+                cell.fill = gp_fill_1_5
 
-    for lo, hi, fill in pct_bins:
-        if fill is None:
-            continue
-        # inclusive lower bound, exclusive upper (except last)
-        if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
-            return fill
-
-    return None
-
-# ------------------------------------
-# APPLY GP HEATMAP (GP column only)
-# ------------------------------------
-if gp_idx:
+    # % heatmap (GB-/FB- only)
     for r in range(3, ws.max_row + 1):
-        cell = ws.cell(row=r, column=gp_idx)
-        try:
-            v = float(cell.value or 0)
-        except Exception:
-            continue
+        for c in range(1, ws.max_column + 1):
+            h = str(ws.cell(row=2, column=c).value or "").strip()
+            if not (h.startswith("GB-") or h.startswith("FB-")):
+                continue
+            cell = ws.cell(row=r, column=c)
+            f = _pct_fill(cell.value)
+            if f:
+                cell.fill = f
 
-        if v <= 0:
-            continue
-        if v >= 20:
-            cell.fill = gp_fill_20p
-        elif 16 <= v <= 19:
-            cell.fill = gp_fill_16_19
-        elif 11 <= v <= 15:
-            cell.fill = gp_fill_11_15
-        elif 6 <= v <= 10:
-            cell.fill = gp_fill_6_10
-        elif 1 <= v <= 5:
-            cell.fill = gp_fill_1_5
+    # Watermark
+    try:
+        ws.oddHeader.center.text = "RP Spray Analytics"
+        ws.oddHeader.center.font = "Tahoma,Bold"
+        ws.oddHeader.center.size = 14
+        ws.oddHeader.center.color = "808080"
+    except Exception:
+        pass
 
-# ------------------------------------
-# APPLY % HEATMAP (GB-* and FB-* only)
-# ------------------------------------
-for r in range(3, ws.max_row + 1):
-    for c in range(1, ws.max_column + 1):
-        h = str(ws.cell(row=2, column=c).value or "").strip()
+    # Print setup
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.35
+    ws.page_margins.bottom = 0.35
+    ws.page_margins.header = 0.15
+    ws.page_margins.footer = 0.15
+    ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
 
-        # Only positional columns
-        if not (h.startswith("GB-") or h.startswith("FB-")):
-            continue
+    # -----------------------------
+    # COACH NOTES BOX (EXCEL)
+    # -----------------------------
+    if notes_box_text:
+        top_row = ws.max_row + 6
+        left_col = 1
+        right_col = ws.max_column
+        box_height = 10
 
-        cell = ws.cell(row=r, column=c)
-        f = _pct_fill(cell.value)
-        if f:
-            cell.fill = f
+        ws.merge_cells(
+            start_row=top_row,
+            start_column=left_col,
+            end_row=top_row + box_height - 1,
+            end_column=right_col,
+        )
 
+        note_cell = ws.cell(row=top_row, column=left_col)
+        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
+        note_cell.font = Font(size=12)  # ✅ set to 12
+        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
+        for rr in range(top_row, top_row + box_height):
+            ws.row_dimensions[rr].height = 22
 
-# ------------------------------------
-# WATERMARK
-# ------------------------------------
-try:
-    ws.oddHeader.center.text = "RP Spray Analytics"
-    ws.oddHeader.center.font = "Tahoma,Bold"
-    ws.oddHeader.center.size = 14
-    ws.oddHeader.center.color = "808080"
-except Exception:
-    pass
+        thick = Side(style="thick", color="000000")
+        for rr in range(top_row, top_row + box_height):
+            for cc in range(left_col, right_col + 1):
+                cur = ws.cell(row=rr, column=cc).border
+                ws.cell(row=rr, column=cc).border = Border(
+                    left=thick if cc == left_col else cur.left,
+                    right=thick if cc == right_col else cur.right,
+                    top=thick if rr == top_row else cur.top,
+                    bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
+                )
 
-
-# ------------------------------------
-# PRINT SETUP
-# ------------------------------------
-ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-ws.page_setup.fitToWidth = 1
-ws.page_setup.fitToHeight = 0
-ws.sheet_properties.pageSetUpPr.fitToPage = True
-ws.print_options.horizontalCentered = True
-ws.page_margins.left = 0.25
-ws.page_margins.right = 0.25
-ws.page_margins.top = 0.35
-ws.page_margins.bottom = 0.35
-ws.page_margins.header = 0.15
-ws.page_margins.footer = 0.15
-ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
-
-
-# -----------------------------
-# COACH NOTES BOX (EXCEL)
-# -----------------------------
-if notes_box_text:
-    top_row = ws.max_row + 6
-    left_col = 1
-    right_col = ws.max_column
-    box_height = 10
-
-    ws.merge_cells(
-        start_row=top_row,
-        start_column=left_col,
-        end_row=top_row + box_height - 1,
-        end_column=right_col,
-    )
-
-    note_cell = ws.cell(row=top_row, column=left_col)
-    note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-    note_cell.font = Font(size=14)
-    note_cell.alignment = Alignment(wrap_text=True, vertical="top")
-
-    for r in range(top_row, top_row + box_height):
-        ws.row_dimensions[r].height = 22
-
-    thick = Side(style="thick", color="000000")
-    for r in range(top_row, top_row + box_height):
-        for c in range(left_col, right_col + 1):
-            cur = ws.cell(row=r, column=c).border
-            ws.cell(row=r, column=c).border = Border(
-                left=thick if c == left_col else cur.left,
-                right=thick if c == right_col else cur.right,
-                top=thick if r == top_row else cur.top,
-                bottom=thick if r == top_row + box_height - 1 else cur.bottom,
-            )
-
+# ✅ IMPORTANT: read bytes AFTER writer closes (after this with-block ends)
+out.seek(0)
 excel_bytes = out.getvalue()
 
 # Use the SAME formatted XLSX bytes for Google Sheets
 gs_bytes = excel_bytes
-
-
-with st.container():
-    col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1], gap="small")
-
-with col_dl1:
-    st.download_button(
-        label="📊 Download Season Report (Excel - Formatted)",
-        data=excel_bytes,
-        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=f"dl_season_excel_{TEAM_CODE}_{_RP_RUN_NONCE}",
-        use_container_width=True,
-    )
-
-with col_dl2:
-    st.download_button(
-        label="🟩 Download Season Report (Google Sheets – Formatted)",
-        data=gs_bytes,
-        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report_GoogleSheets.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=f"dl_season_gs_{TEAM_CODE}_{_RP_RUN_NONCE}",
-        use_container_width=True,
-    )
-    st.caption("To open: sheets.google.com → File → Import → Upload.")
-
-with col_dl3:
-    st.download_button(
-        label="📄 Download Season Report (CSV – Raw Data)",
-        data=csv_bytes,
-        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
-        mime="text/csv",
-        key=f"dl_season_csv_{TEAM_CODE}_{_RP_RUN_NONCE}",
-        use_container_width=True,
-    )
-
 
 
 # -----------------------------
@@ -2721,6 +2629,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
