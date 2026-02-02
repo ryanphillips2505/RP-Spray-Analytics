@@ -2517,7 +2517,7 @@ pct_bins = [
 ]
 
 
-    def _pct_fill(v):
+def _pct_fill(v):
         if v is None or v == "":
             return None
         try:
@@ -2699,6 +2699,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
