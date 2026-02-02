@@ -2690,37 +2690,56 @@ else:
 
 
 
-# ✅ IMPORTANT: read bytes AFTER writer closes (after this with-block ends)
-out.seek(0)
+# ✅ AFTER writer closes: freeze XLSX bytes ONCE (prevents corruption)
+try:
+    out.seek(0)
+except Exception:
+    pass
+
 excel_bytes = out.getvalue()
 
-# Use the SAME formatted XLSX bytes for Google Sheets
-gs_bytes = excel_bytes
+# If excel_bytes is empty, something upstream failed (prevents “corrupt file” downloads)
+if not excel_bytes or len(excel_bytes) < 5000:
+    st.error("Excel export failed (file too small). Check ExcelWriter block above for an exception.")
+else:
+    # Use SAME formatted XLSX bytes for Google Sheets upload
+    gs_bytes = excel_bytes
+
+    with st.container():
+        col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1], gap="small")
+
+    with col_dl1:
+        st.download_button(
+            label="📊 Download Season Report (Excel - Formatted)",
+            data=excel_bytes,
+            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"dl_season_excel_{TEAM_CODE}_{_RP_RUN_NONCE}",
+            use_container_width=True,
+        )
+
+    with col_dl2:
+        st.download_button(
+            label="🟩 Download Season Report (Google Sheets – Formatted)",
+            data=gs_bytes,
+            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report_GoogleSheets.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"dl_season_gs_{TEAM_CODE}_{_RP_RUN_NONCE}",
+            use_container_width=True,
+        )
+        st.caption("To open: sheets.google.com → File → Import → Upload.")
+
+    with col_dl3:
+        st.download_button(
+            label="📄 Download Season Report (CSV – Raw Data)",
+            data=csv_bytes,
+            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
+            mime="text/csv",
+            key=f"dl_season_csv_{TEAM_CODE}_{_RP_RUN_NONCE}",
+            use_container_width=True,
+        )
 
 
-# -----------------------------
-# FOOTER (Copyright)
-# -----------------------------
-st.markdown(
-    """
-    <style>
-    .rp-footer {
-        margin-top: 40px;
-        padding-top: 12px;
-        border-top: 1px solid rgba(0,0,0,0.12);
-        text-align: center;
-        font-size: 0.85rem;
-        color: rgba(0,0,0,0.55);
-    }
-    </style>
-
-    <div class="rp-footer">
-        © 2026 RP Spray Analytics. All rights reserved.<br>
-        Proprietary software. Unauthorized copying, redistribution, or reverse engineering prohibited.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 
