@@ -2374,9 +2374,6 @@ def _clear_sheet_safely(ws_):
             cell.alignment = Alignment()
 
 def _apply_outer_thick_border(ws_, rng: str):
-    """
-    Ensures a thick outline around the entire range (merged or not).
-    """
     min_col, min_row, max_col, max_row = range_boundaries(rng)
     for r in range(min_row, max_row + 1):
         for c in range(min_col, max_col + 1):
@@ -2401,22 +2398,19 @@ def _set_pct_cell(ws_, addr, v):
 def _position_block(ws_, label_rng, gb_addr, fb_addr, val_gb_addr, val_fb_addr,
                     label_text, gb_key, fb_key, vals):
     """
-    Position block layout (matches your screenshot):
-      1) merged position label
-      2) GB / FB labels
-      3) values
+    Position block layout:
+      - merged position cell (grey fill)
+      - GB/FB labels row
+      - values row (percent)
     """
-    # merged position label
     ws_.merge_cells(label_rng)
     tl = ws_[label_rng.split(":")[0]]
     tl.value = label_text
     tl.font = _label_font
     tl.alignment = _center
-    # ✅ grey background behind position name
     tl.fill = _pos_fill
     _apply_outer_thick_border(ws_, label_rng)
 
-    # GB / FB label row
     gb = ws_[gb_addr]
     fb = ws_[fb_addr]
     gb.value = "GB"
@@ -2426,7 +2420,6 @@ def _position_block(ws_, label_rng, gb_addr, fb_addr, val_gb_addr, val_fb_addr,
         c.alignment = _center
         c.border = _box_thick
 
-    # values row
     _set_pct_cell(ws_, val_gb_addr, vals.get(gb_key, 0))
     _set_pct_cell(ws_, val_fb_addr, vals.get(fb_key, 0))
 
@@ -2449,13 +2442,13 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     for col in ["C","D","E","F","G","H","I"]:
         ws_.column_dimensions[col].width = 13
 
-    # ✅ heights (reset to 20 everywhere like you asked)
+    # ✅ heights: reset to 20 everywhere; title row 30; divider row 10
     for rr in range(1, 41):
         ws_.row_dimensions[rr].height = 20
     ws_.row_dimensions[1].height = 30
     ws_.row_dimensions[16].height = 10
 
-    # title (FULL WIDTH THICK OUTLINE)
+    # title
     ws_.merge_cells("A1:I1")
     t = ws_["A1"]
     t.value = str(player_name)
@@ -2463,89 +2456,19 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     t.alignment = _center
     _apply_outer_thick_border(ws_, "A1:I1")
 
-    # ----------------------------------------------------------
-    # POSITION BLOCKS — MATCH THE SCREENSHOT COORDINATES
-    # ----------------------------------------------------------
-
-    # CF (row 3–5)
-    _position_block(ws_,
-        label_rng="E3:F3",
-        gb_addr="E4", fb_addr="F4",
-        val_gb_addr="E5", val_fb_addr="F5",
-        label_text="CF",
-        gb_key="GB-CF", fb_key="FB-CF",
-        vals=vals
-    )
-
-    # LF (row 5–7)
-    _position_block(ws_,
-        label_rng="C5:D5",
-        gb_addr="C6", fb_addr="D6",
-        val_gb_addr="C7", val_fb_addr="D7",
-        label_text="LF",
-        gb_key="GB-LF", fb_key="FB-LF",
-        vals=vals
-    )
-
-    # RF (row 5–7)
-    _position_block(ws_,
-        label_rng="G5:H5",
-        gb_addr="G6", fb_addr="H6",
-        val_gb_addr="G7", val_fb_addr="H7",
-        label_text="RF",
-        gb_key="GB-RF", fb_key="FB-RF",
-        vals=vals
-    )
-
-    # SS (row 8–10)
-    _position_block(ws_,
-        label_rng="D8:E8",
-        gb_addr="D9", fb_addr="E9",
-        val_gb_addr="D10", val_fb_addr="E10",
-        label_text="SS",
-        gb_key="GB-SS", fb_key="FB-SS",
-        vals=vals
-    )
-
-    # 2B (row 8–10)
-    _position_block(ws_,
-        label_rng="F8:G8",
-        gb_addr="F9", fb_addr="G9",
-        val_gb_addr="F10", val_fb_addr="G10",
-        label_text="2B",
-        gb_key="GB-2B", fb_key="FB-2B",
-        vals=vals
-    )
-
-    # 3B (row 11–13)
-    _position_block(ws_,
-        label_rng="A11:B11",
-        gb_addr="A12", fb_addr="B12",
-        val_gb_addr="A13", val_fb_addr="B13",
-        label_text="3B",
-        gb_key="GB-3B", fb_key="FB-3B",
-        vals=vals
-    )
-
-    # 1B (row 11–13)
-    _position_block(ws_,
-        label_rng="H11:I11",
-        gb_addr="H12", fb_addr="I12",
-        val_gb_addr="H13", val_fb_addr="I13",
-        label_text="1B",
-        gb_key="GB-1B", fb_key="FB-1B",
-        vals=vals
-    )
-
-    # P (row 13–15)
-    _position_block(ws_,
-        label_rng="E13:F13",
-        gb_addr="E14", fb_addr="F14",
-        val_gb_addr="E15", val_fb_addr="F15",
-        label_text="P",
-        gb_key="GB-P", fb_key="FB-P",
-        vals=vals
-    )
+    # CF
+    _position_block(ws_, "E3:F3", "E4", "F4", "E5", "F5", "CF", "GB-CF", "FB-CF", vals)
+    # LF / RF
+    _position_block(ws_, "C5:D5", "C6", "D6", "C7", "D7", "LF", "GB-LF", "FB-LF", vals)
+    _position_block(ws_, "G5:H5", "G6", "H6", "G7", "H7", "RF", "GB-RF", "FB-RF", vals)
+    # SS / 2B
+    _position_block(ws_, "D8:E8", "D9", "E9", "D10", "E10", "SS", "GB-SS", "FB-SS", vals)
+    _position_block(ws_, "F8:G8", "F9", "G9", "F10", "G10", "2B", "GB-2B", "FB-2B", vals)
+    # 3B / 1B
+    _position_block(ws_, "A11:B11", "A12", "B12", "A13", "B13", "3B", "GB-3B", "FB-3B", vals)
+    _position_block(ws_, "H11:I11", "H12", "I12", "H13", "I13", "1B", "GB-1B", "FB-1B", vals)
+    # P
+    _position_block(ws_, "E13:F13", "E14", "F14", "E15", "F15", "P", "GB-P", "FB-P", vals)
 
     # divider row 16 (black bar)
     for col in ["A","B","C","D","E","F","G","H","I"]:
@@ -2553,7 +2476,7 @@ def _build_player_scout_sheet(ws_, player_name, stats):
         cell.fill = PatternFill("solid", fgColor="000000")
         cell.border = Border(top=_thick, bottom=_thick)
 
-    # BIP box (match screenshot: starts at B17)
+    # BIP box
     ws_.merge_cells("B17:D17")
     b1 = ws_["B17"]
     b1.value = "BIP"
@@ -2585,74 +2508,97 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
 
 
-    # -----------------------------
-    # COACH NOTES BOX (Season sheet)
-    # -----------------------------
-    notes_box_text_local = str(notes_box_text or "").strip()
-    if notes_box_text_local:
-        top_row = ws.max_row + 6
-        left_col = 1
-        right_col = ws.max_column
-        box_height = 10
+# ==========================================================
+# ✅ BUILD THE EXCEL FILE (THIS WAS MISSING)
+# ==========================================================
+out = BytesIO()
 
-        ws.merge_cells(
-            start_row=top_row,
-            start_column=left_col,
-            end_row=top_row + box_height - 1,
-            end_column=right_col,
-        )
-
-        note_cell = ws.cell(row=top_row, column=left_col)
-        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text_local}"
-        note_cell.font = Font(size=12)
-        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
-
-        for rr in range(top_row, top_row + box_height):
-            ws.row_dimensions[rr].height = 22
-
-        thick = Side(style="thick", color="000000")
-        for rr in range(top_row, top_row + box_height):
-            for cc in range(left_col, right_col + 1):
-                cur = ws.cell(row=rr, column=cc).border
-                ws.cell(row=rr, column=cc).border = Border(
-                    left=thick if cc == left_col else cur.left,
-                    right=thick if cc == right_col else cur.right,
-                    top=thick if rr == top_row else cur.top,
-                    bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
-                )
-
-    # -----------------------------
-    # INDIVIDUAL PLAYER TABS (inside writer)
-    # -----------------------------
-    try:
-        roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str).tolist())
-    except Exception:
-        roster_source = list(df_export["Player"].astype(str).tolist()) if "Player" in df_export.columns else []
-
-    active_for_tabs = sorted(set(roster_source), key=lambda x: str(x).lower())
-
-    for player_name in active_for_tabs:
-        stats = season_players.get(player_name, empty_stat_dict())
-        base = _safe_sheet_name(player_name)
-        sheet = _unique_sheet_name(writer.book, base)
-        ws_player = writer.book.create_sheet(title=sheet)
-        _build_player_scout_sheet(ws_player, player_name, stats)
-        
-
-
-# ✅ AFTER writer closes: freeze XLSX bytes ONCE (prevents corruption)
 try:
-    out.seek(0)
-except Exception:
-    pass
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
-excel_bytes = out.getvalue()
+        # --- SEASON SHEET ---
+        # df_xl is built above in your code. Use it if present, otherwise safe fallback.
+        df_export = None
+        try:
+            df_export = df_xl.copy() if isinstance(df_xl, pd.DataFrame) else None
+        except Exception:
+            df_export = None
 
-# If excel_bytes is empty, something upstream failed (prevents corrupt downloads)
-if not excel_bytes or len(excel_bytes) < 5000:
-    st.error("Excel export failed (file too small). Scroll UP for the real exception above.")
+        if df_export is None or df_export.empty:
+            df_export = pd.DataFrame(columns=["Player"])
+
+        df_export.to_excel(writer, sheet_name="Season", index=False)
+        ws_season = writer.sheets["Season"]
+
+        # basic readability (won’t break your other formatting)
+        ws_season.freeze_panes = "A3"
+        ws_season.row_dimensions[1].height = 30
+        ws_season.row_dimensions[2].height = 20
+
+        # --- COACH NOTES BOX on Season sheet ---
+        notes_box_text_local = str(notes_box_text or "").strip()
+        if notes_box_text_local:
+            top_row = ws_season.max_row + 4
+            left_col = 1
+            right_col = max(1, ws_season.max_column)
+            box_height = 10
+
+            ws_season.merge_cells(
+                start_row=top_row,
+                start_column=left_col,
+                end_row=top_row + box_height - 1,
+                end_column=right_col,
+            )
+            note_cell = ws_season.cell(row=top_row, column=left_col)
+            note_cell.value = f"COACHES NOTES:\n\n{notes_box_text_local}"
+            note_cell.font = Font(size=12)
+            note_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+            for rr in range(top_row, top_row + box_height):
+                ws_season.row_dimensions[rr].height = 22
+
+            thick = Side(style="thick", color="000000")
+            for rr in range(top_row, top_row + box_height):
+                for cc in range(left_col, right_col + 1):
+                    cur = ws_season.cell(row=rr, column=cc).border
+                    ws_season.cell(row=rr, column=cc).border = Border(
+                        left=thick if cc == left_col else cur.left,
+                        right=thick if cc == right_col else cur.right,
+                        top=thick if rr == top_row else cur.top,
+                        bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
+                    )
+
+        # --- INDIVIDUAL PLAYER TABS ---
+        # Prefer current_roster; fallback to df_export Player column
+        try:
+            roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str).tolist())
+        except Exception:
+            roster_source = list(df_export["Player"].astype(str).tolist()) if "Player" in df_export.columns else []
+
+        active_for_tabs = sorted({str(x).strip() for x in roster_source if str(x).strip()}, key=lambda x: x.lower())
+
+        for player_name in active_for_tabs:
+            pstats = season_players.get(player_name, empty_stat_dict())
+            base = _safe_sheet_name(player_name)
+            sheet = _unique_sheet_name(writer.book, base)
+            ws_player = writer.book.create_sheet(title=sheet)
+            _build_player_scout_sheet(ws_player, player_name, pstats)
+
+except Exception as e:
+    # Show the REAL exception so you’re not blind
+    st.error("Excel export crashed. Here is the real exception:")
+    st.exception(e)
+    excel_bytes = b""
 else:
-    # Use SAME formatted XLSX bytes for Google Sheets upload
+    out.seek(0)
+    excel_bytes = out.getvalue()
+
+# ==========================================================
+# DOWNLOAD BUTTONS
+# ==========================================================
+if not excel_bytes or len(excel_bytes) < 5000:
+    st.error("Excel export failed (file too small). The real error is shown above.")
+else:
     gs_bytes = excel_bytes
 
     with st.container():
@@ -2689,7 +2635,6 @@ else:
             use_container_width=True,
         )
 
-       
 # -----------------------------
 # FOOTER (Copyright)
 # -----------------------------
@@ -2713,6 +2658,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
