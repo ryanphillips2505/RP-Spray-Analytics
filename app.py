@@ -2609,6 +2609,10 @@ if notes_box_text:
 # - Heatmap matches TEAM (orange → red)
 # ==========================================================
 
+st.write("DEBUG roster size:", len(list(current_roster)) if current_roster else 0)
+st.write("DEBUG sheets BEFORE player tabs:", writer.book.sheetnames)
+
+
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
@@ -2910,6 +2914,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
