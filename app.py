@@ -2773,6 +2773,118 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         wsp.page_margins.header = 0.15
         wsp.page_margins.footer = 0.15
         wsp.page_setup.paperSize = wsp.PAPERSIZE_LETTER
+        
+        # =====================================================
+        # AT-BAT TRACKER (BOTTOM HALF OF PLAYER SHEET)
+        # 10 At-Bats | 1 symbol per cell | Clean print layout
+        # =====================================================
+
+        TITLE_ROW = 25
+        HEADER_ROW = 26
+        FIRST_AB_ROW = 27
+        AB_COUNT = 10
+
+        # Columns B–O:
+        # B: AB #
+        # C–F: Balls (4)
+        # G–I: Strikes (3)
+        # J–O: Notes (merged)
+        col_widths = {
+            "B": 5,
+            "C": 4, "D": 4, "E": 4, "F": 4,
+            "G": 4, "H": 4, "I": 4,
+            "J": 10, "K": 10, "L": 10, "M": 10, "N": 10, "O": 10,
+        }
+        for c, w in col_widths.items():
+            wsp.column_dimensions[c].width = w
+
+        center = Alignment(horizontal="center", vertical="center")
+        left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        thin = Side(style="thin", color="000000")
+
+        def border_all(cell):
+            cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def border_bottom_only(cell):
+            cell.border = Border(bottom=thin)
+
+        # Title
+        wsp.merge_cells("B25:O25")
+        title_cell = wsp["B25"]
+        title_cell.value = "AT-BAT TRACKER"
+        title_cell.font = Font(bold=True, size=14)
+        title_cell.alignment = center
+
+        # Headers
+        wsp["B26"].value = "AB"
+        wsp["B26"].font = Font(bold=True, size=12)
+        wsp["B26"].alignment = center
+
+        wsp.merge_cells("C26:F26")
+        wsp["C26"].value = "BALLS (○ → ●)"
+        wsp["C26"].font = Font(bold=True, size=12)
+        wsp["C26"].alignment = center
+
+        wsp.merge_cells("G26:I26")
+        wsp["G26"].value = "STRIKES (□ → ■)"
+        wsp["G26"].font = Font(bold=True, size=12)
+        wsp["G26"].alignment = center
+
+        wsp.merge_cells("J26:O26")
+        wsp["J26"].value = "NOTES"
+        wsp["J26"].font = Font(bold=True, size=12)
+        wsp["J26"].alignment = center
+
+        # Header borders (full box)
+        for col in ["B","C","D","E","F","G","H","I","J","K","L","M","N","O"]:
+            border_all(wsp[f"{col}{HEADER_ROW}"])
+
+        ball_empty = "○"
+        strike_empty = "□"
+
+        # At-Bat rows
+        for i in range(AB_COUNT):
+            r = FIRST_AB_ROW + i
+            wsp.row_dimensions[r].height = 22
+
+            # AB number
+            ab_cell = wsp[f"B{r}"]
+            ab_cell.value = str(i + 1)
+            ab_cell.font = Font(bold=True, size=12)
+            ab_cell.alignment = center
+            border_all(ab_cell)
+
+            # Balls (C–F) boxed
+            for col in ["C", "D", "E", "F"]:
+                cell = wsp[f"{col}{r}"]
+                cell.value = ball_empty
+                cell.font = Font(size=16, bold=True)
+                cell.alignment = center
+                border_all(cell)
+
+            # Strikes (G–I) boxed
+            for col in ["G", "H", "I"]:
+                cell = wsp[f"{col}{r}"]
+                cell.value = strike_empty
+                cell.font = Font(size=16, bold=True)
+                cell.alignment = center
+                border_all(cell)
+
+            # Notes (J–O merged)
+            wsp.merge_cells(f"J{r}:O{r}")
+            note_cell = wsp[f"J{r}"]
+            note_cell.value = ""
+            note_cell.font = Font(size=12)
+            note_cell.alignment = left_wrap
+
+            # Notes: clean writing line (bottom border only)
+            for col in ["J", "K", "L", "M", "N", "O"]:
+                border_bottom_only(wsp[f"{col}{r}"])
+
+        # Print area: one clean page for the player sheet
+        wsp.print_area = "B1:O55"
+        wsp.page_setup.fitToWidth = 1
+        wsp.page_setup.fitToHeight = 1
                
 
 # ✅ AFTER writer closes: pull bytes
@@ -2849,6 +2961,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
