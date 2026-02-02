@@ -2668,68 +2668,80 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         # Create sheet + write it
         base = _safe_sheet_name(player_name)
         sheet = _unique_sheet_name(writer.book, base)
-        # ==========================================================
-        # INDIVIDUAL PLAYER TABS — SCOUTING SHEET (NO TABLE)
-        # Creates one sheet per active roster hitter using the spray layout
-        # ==========================================================
+        
+# ==========================================================
+# INDIVIDUAL PLAYER TABS — SCOUTING SHEET (NO TABLE)
+# Orange → Red heatmap (matches TEAM heat map)
+# ==========================================================
 
-        from openpyxl.cell.cell import MergedCell
-        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-        from openpyxl.utils import get_column_letter
+from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
-        def _safe_sheet_name(name: str) -> str:
-            name = str(name or "").strip()
-            name = re.sub(r'[:\\/?*\[\]]', "", name)
-            name = re.sub(r"\s+", " ", name)
-            return name[:31] if name else "Player"
+# -------------------------
+# helpers
+# -------------------------
+def _safe_sheet_name(name: str) -> str:
+    name = str(name or "").strip()
+    name = re.sub(r'[:\\/?*\[\]]', "", name)
+    name = re.sub(r"\s+", " ", name)
+    return name[:31] if name else "Player"
 
-        def _unique_sheet_name(wb, base: str) -> str:
-            if base not in wb.sheetnames:
-                return base
-            i = 2
-            while True:
-                suffix = f" {i}"
-                cand = (base[:31 - len(suffix)] + suffix)[:31]
-                if cand not in wb.sheetnames:
-                    return cand
-                i += 1
+def _unique_sheet_name(wb, base: str) -> str:
+    if base not in wb.sheetnames:
+        return base
+    i = 2
+    while True:
+        suffix = f" {i}"
+        cand = (base[:31 - len(suffix)] + suffix)[:31]
+        if cand not in wb.sheetnames:
+            return cand
+        i += 1
 
-        def _safe_float(x):
-            try:
-                return float(x)
-            except Exception:
-                return 0.0
+def _safe_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return 0.0
 
-        # --- color bins (GB = green, FB = red) ---
-        gb_bins = [
-            (0.00, 0.05, None),
-            (0.05, 0.15, PatternFill("solid", fgColor="D9F2D9")),
-            (0.15, 0.30, PatternFill("solid", fgColor="A8E6A3")),
-            (0.30, 0.45, PatternFill("solid", fgColor="6FD36F")),
-            (0.45, 0.60, PatternFill("solid", fgColor="2EAF2E")),
-            (0.60, 1.01, PatternFill("solid", fgColor="0B7A0B")),
-        ]
-        fb_bins = [
-            (0.00, 0.05, None),
-            (0.05, 0.15, PatternFill("solid", fgColor="FFE0E0")),
-            (0.15, 0.30, PatternFill("solid", fgColor="FFB3B3")),
-            (0.30, 0.45, PatternFill("solid", fgColor="FF8080")),
-            (0.45, 0.60, PatternFill("solid", fgColor="F04A4A")),
-            (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),
-        ]
+# -------------------------
+# ORANGE → RED HEAT MAP BINS
+# (same cutoffs as team heat map)
+# -------------------------
+heat_bins_orange_red = [
+    (0.00, 0.05, None),
+    (0.05, 0.15, PatternFill("solid", fgColor="FFE5CC")),  # light orange
+    (0.15, 0.30, PatternFill("solid", fgColor="FFCC99")),  # orange
+    (0.30, 0.45, PatternFill("solid", fgColor="FFB266")),  # deep orange
+    (0.45, 0.60, PatternFill("solid", fgColor="FF7A45")),  # orange-red
+    (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),  # dark red
+]
 
-        def _fill(v, bins):
-            x = _safe_float(v)
-            if x <= 0:
-                return None
-            if x > 1:
-                x = 1.0
-            for lo, hi, f in bins:
-                if f is None:
-                    continue
-                if lo <= x < hi:
-                    return f
-            return None
+def _fill(v, bins):
+    x = _safe_float(v)
+    if x <= 0:
+        return None
+    if x > 1:
+        x = 1.0
+    for lo, hi, f in bins:
+        if f is None:
+            continue
+        if lo <= x < hi:
+            return f
+    return None
+
+# -------------------------
+# percent cell writer
+# -------------------------
+def _set_pct_cell(ws, addr, value):
+    cell = ws[addr]
+    v = _safe_float(value)
+    cell.value = round(v * 100)
+    cell.number_format = '0"%"'
+    fill = _fill(v, heat_bins_orange_red)
+    if fill:
+        cell.fill = fill
+
 
         # --- common styles ---
         center = Alignment(horizontal="center", vertical="center")
@@ -2992,6 +3004,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
