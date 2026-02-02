@@ -2598,6 +2598,182 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                     top=thick if rr == top_row else cur.top,
                     bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
                 )
+     # ==========================================================
+    # INDIVIDUAL PLAYER TABS (ACTIVE ROSTER ONLY)
+    # - Tab 1: Season (team)
+    # - Tabs 2+: one sheet per active hitter, even if 0 BIP
+    # - Uses SAME df_export formatting logic per player
+    # ==========================================================
+
+    def _safe_sheet_name(name: str) -> str:
+        name = str(name or "").strip()
+        # Excel sheet name rules: max 31 chars, no : \ / ? * [ ]
+        name = re.sub(r'[:\\/?*\[\]]', '', name)
+        name = re.sub(r"\s+", " ", name)
+        return name[:31] if name else "Player"
+
+    def _unique_sheet_name(wb, base: str) -> str:
+        if base not in wb.sheetnames:
+            return base
+        i = 2
+        while True:
+            suffix = f" {i}"
+            cand = (base[:31 - len(suffix)] + suffix)[:31]
+            if cand not in wb.sheetnames:
+                return cand
+            i += 1
+
+    # Active roster hitters = current_roster (your existing variable)
+    active_for_tabs = sorted(list(current_roster), key=lambda x: str(x).lower())
+
+    for player_name in active_for_tabs:
+
+        # Build a 1-row dataframe using your SAME season_players dict
+        stats = season_players.get(player_name, empty_stat_dict())
+
+        # Rebuild a single-player df exactly like your team export expects
+        row = {"Player": player_name}
+
+        # GP
+        row["GP"] = int(stats.get(GP_KEY, 0) or 0)
+
+        # Totals
+        gb = int(stats.get("GB", 0) or 0)
+        fb = int(stats.get("FB", 0) or 0)
+        bip = gb + fb
+
+        # Percent columns
+        row["GB%"] = (gb / bip) if bip else 0
+        row["FB%"] = (fb / bip) if bip else 0
+
+        # Positional % columns (GB-*/FB-* as % of total BIP)
+        for ck in COMBO_KEYS:
+            v = float(stats.get(ck, 0) or 0)
+            row[ck] = (v / bip) if bip else 0
+
+        row["BIP"] = int(bip)
+
+        # Match the SAME column order you used in df_export
+        # (Use df_export.columns as the template so tabs match the team sheet view)
+        one_df = pd.DataFrame([row])
+
+        # If team export had extra columns, keep them (blank/0) so formatting doesn’t break
+        for c in list(df_export.columns):
+            if c not in one_df.columns:
+                one_df[c] = 0
+
+        # Now reorder to match team export exactly
+        one_df = one_df[list(df_export.columns)]
+
+        # Create sheet + write it
+        base = _safe_sheet_name(player_name)
+        sheet = _unique_sheet_name(writer.book, base)
+        one_df.to_excel(writer, index=False, sheet_name=sheet, startrow=1)
+        wsp = writer.book[sheet]
+
+        # -----------------------------
+        # COPY THE SAME FORMATTING RULES
+        # -----------------------------
+        # Title row
+        total_cols_p = max(1, wsp.max_column)
+        wsp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols_p)
+        tcell = wsp.cell(row=1, column=1, value=str(player_name))
+        tcell.font = Font(bold=True, size=28)
+        tcell.alignment = Alignment(horizontal="center", vertical="center")
+
+        wsp.freeze_panes = "A3"
+
+        # Row heights
+        wsp.row_dimensions[1].height = 35
+        wsp.row_dimensions[2].height = 35
+        for rr in range(3, wsp.max_row + 1):
+            wsp.row_dimensions[rr].height = 35
+
+        # Header styling
+        header_font = Font(bold=True, size=12)
+        header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        header_fill = PatternFill("solid", fgColor="D9E1F2")
+        for cell in wsp[2]:
+            cell.font = header_font
+            cell.alignment = header_align
+            cell.fill = header_fill
+
+        # Player col formatting
+        player_col_idx = None
+        headers_p = [str(wsp.cell(row=2, column=j).value or "").strip() for j in range(1, wsp.max_column + 1)]
+        for j, h in enumerate(headers_p, start=1):
+            if h == "Player":
+                player_col_idx = j
+                break
+
+        body_font = Font(size=12)
+        player_font = Font(size=12, bold=True)
+        center_align = Alignment(horizontal="center", vertical="center")
+        left_align = Alignment(horizontal="left", vertical="center")
+
+        for rr in range(3, wsp.max_row + 1):
+            for cc in range(1, wsp.max_column + 1):
+                cell = wsp.cell(row=rr, column=cc)
+                cell.font = body_font
+                cell.alignment = center_align
+                if player_col_idx and cc == player_col_idx:
+                    cell.font = player_font
+                    cell.alignment = left_align
+
+        # Autosize Player col
+        if player_col_idx:
+            wsp.column_dimensions[get_column_letter(player_col_idx)].width = 24
+
+        # Percent number formats
+        for j, h in enumerate(headers_p, start=1):
+            if h in ("GB%", "FB%") or h.startswith("GB-") or h.startswith("FB-"):
+                L = get_column_letter(j)
+                for rr in range(3, wsp.max_row + 1):
+                    wsp[f"{L}{rr}"].number_format = "0%"
+
+        # Heatmap ONLY on GB-/FB- columns (NOT GB%/FB%)
+        def _pct_fill(v):
+            if v is None or v == "":
+                return None
+            try:
+                x = float(v)
+            except Exception:
+                return None
+            if x <= 0:
+                return None
+            if x < 0: x = 0.0
+            if x > 1: x = 1.0
+            for lo, hi, fill in pct_bins:
+                if fill is None:
+                    continue
+                if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
+                    return fill
+            return None
+
+        for rr in range(3, wsp.max_row + 1):
+            for cc in range(1, wsp.max_column + 1):
+                h = str(wsp.cell(row=2, column=cc).value or "").strip()
+                if not (h.startswith("GB-") or h.startswith("FB-")):
+                    continue
+                cell = wsp.cell(row=rr, column=cc)
+                f = _pct_fill(cell.value)
+                if f:
+                    cell.fill = f
+
+        # Print setup (same as team sheet)
+        wsp.page_setup.orientation = wsp.ORIENTATION_PORTRAIT
+        wsp.page_setup.fitToWidth = 1
+        wsp.page_setup.fitToHeight = 0
+        wsp.sheet_properties.pageSetUpPr.fitToPage = True
+        wsp.print_options.horizontalCentered = True
+        wsp.page_margins.left = 0.25
+        wsp.page_margins.right = 0.25
+        wsp.page_margins.top = 0.35
+        wsp.page_margins.bottom = 0.35
+        wsp.page_margins.header = 0.15
+        wsp.page_margins.footer = 0.15
+        wsp.page_setup.paperSize = wsp.PAPERSIZE_LETTER
+               
 
 # ✅ AFTER writer closes: pull bytes
 out.seek(0)
@@ -2673,6 +2849,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
