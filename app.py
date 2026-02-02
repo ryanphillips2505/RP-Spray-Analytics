@@ -2626,6 +2626,12 @@ with col_dl2:
         key=f"dl_season_gs_{TEAM_CODE}_{_RP_RUN_NONCE}",
     )
 
+    # 👇 Caption lives ONLY under Google Sheets button
+    st.caption(
+        "To open in Google Sheets: download → go to **sheets.google.com** → "
+        "**File → Import → Upload**."
+    )
+
 with col_dl3:
     st.download_button(
         label="📄 Download Season Report (CSV – Raw Data)",
@@ -2634,9 +2640,6 @@ with col_dl3:
         mime="text/csv",
         key=f"dl_season_csv_{TEAM_CODE}_{_RP_RUN_NONCE}",
     )
-st.caption(
-    "To open in Google Sheets: download the file → go to sheets.google.com → File → Import → Upload."
-)
 
 
 # -----------------------------
@@ -2662,6 +2665,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
