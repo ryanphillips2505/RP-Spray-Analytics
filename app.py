@@ -2520,10 +2520,25 @@ pct_bins = [
 def _pct_fill(v):
     if v is None or v == "":
         return None
-    try:
-        x = float(v)
-    except Exception:
-        return None
+
+    # handle strings like "16%"
+    if isinstance(v, str):
+        s = v.strip().replace("%", "")
+        if s == "":
+            return None
+        try:
+            x = float(s)
+        except Exception:
+            return None
+        x = x / 100.0  # convert 16 -> 0.16
+    else:
+        try:
+            x = float(v)
+        except Exception:
+            return None
+        # if it's 16 instead of 0.16, convert
+        if x > 1.0:
+            x = x / 100.0
 
     # clamp to [0, 1]
     if x < 0:
@@ -2538,6 +2553,7 @@ def _pct_fill(v):
             return fill
 
     return None
+
 
 
 # ------------------------------------
@@ -2575,15 +2591,8 @@ for r in range(3, ws.max_row + 1):
             continue
 
         cell = ws.cell(row=r, column=c)
-        try:
-            v = float(cell.value or 0)
-        except Exception:
-            continue
 
-        if v <= 0:
-            continue
-
-        f = _pct_fill(v)
+        f = _pct_fill(cell.value)
         if f:
             cell.fill = f
 
@@ -2717,6 +2726,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
