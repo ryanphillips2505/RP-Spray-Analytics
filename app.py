@@ -2313,9 +2313,10 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                 num = pd.to_numeric(df_export[c], errors="coerce").fillna(0)
                 df_export[c] = (num / denom).fillna(0)
 
-        # Drop raw GB/FB totals
+        # Drop raw GB/FB totals (we're showing GB%/FB% now)
         df_export = df_export.drop(columns=["GB", "FB"])
 
+        # Put columns in the order you want:
         cols = list(df_export.columns)
         gb_pos = [c for c in cols if str(c).startswith("GB-")]
         fb_pos = [c for c in cols if str(c).startswith("FB-")]
@@ -2581,7 +2582,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
         note_cell = ws.cell(row=top_row, column=left_col)
         note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-        note_cell.font = Font(size=12)  # ✅ set to 12
+        note_cell.font = Font(size=12)  # size 12
         note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
         for rr in range(top_row, top_row + box_height):
@@ -2597,6 +2598,49 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                     top=thick if rr == top_row else cur.top,
                     bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
                 )
+
+# ✅ AFTER writer closes: pull bytes
+out.seek(0)
+excel_bytes = out.getvalue()
+
+# Use the SAME formatted XLSX bytes for Google Sheets
+gs_bytes = excel_bytes
+
+
+with st.container():
+    col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1], gap="small")
+
+with col_dl1:
+    st.download_button(
+        label="📊 Download Season Report (Excel - Formatted)",
+        data=excel_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_season_excel_{TEAM_CODE}_{_RP_RUN_NONCE}",
+        use_container_width=True,
+    )
+
+with col_dl2:
+    st.download_button(
+        label="🟩 Download Season Report (Google Sheets – Formatted)",
+        data=gs_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report_GoogleSheets.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_season_gs_{TEAM_CODE}_{_RP_RUN_NONCE}",
+        use_container_width=True,
+    )
+    st.caption("To open: sheets.google.com → File → Import → Upload.")
+
+with col_dl3:
+    st.download_button(
+        label="📄 Download Season Report (CSV – Raw Data)",
+        data=csv_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
+        mime="text/csv",
+        key=f"dl_season_csv_{TEAM_CODE}_{_RP_RUN_NONCE}",
+        use_container_width=True,
+    )
+
 
 # ✅ IMPORTANT: read bytes AFTER writer closes (after this with-block ends)
 out.seek(0)
@@ -2629,6 +2673,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
