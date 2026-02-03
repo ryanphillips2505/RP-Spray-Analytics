@@ -2299,6 +2299,7 @@ def _build_individual_spray_sheet(
     sheet_name: str,
     player_name: str,
     stats: dict,
+    notes_text: str = "",   # ✅ added back so your existing call doesn't crash
 ):
     """
     Builds the EXACT style 'Individual Spray' tab:
@@ -2412,6 +2413,7 @@ def _build_individual_spray_sheet(
         ccell = ws.cell(row=bot, column=3, value="S")
         ccell.font = Font(bold=True, size=10)
         ccell.alignment = Alignment(horizontal="center", vertical="center")
+
 
 
     # -----------------------------
@@ -3031,6 +3033,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
