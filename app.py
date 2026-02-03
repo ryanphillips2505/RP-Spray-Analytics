@@ -2438,11 +2438,10 @@ def _build_player_scout_sheet(ws_, player_name, stats):
     _clear_sheet_safely(ws_)
 
     # widths — keep all columns uniform
-for col in ["A","B","C","D","E","F","G","H","I"]:
-    ws_.column_dimensions[col].width = 13
+    for col in ["A","B","C","D","E","F","G","H","I"]:
+        ws_.column_dimensions[col].width = 13
 
-
-    # ✅ heights: reset to 20 everywhere; title row 30; divider row 10
+    # heights
     for rr in range(1, 41):
         ws_.row_dimensions[rr].height = 20
     ws_.row_dimensions[1].height = 30
@@ -2465,12 +2464,12 @@ for col in ["A","B","C","D","E","F","G","H","I"]:
     _position_block(ws_, "D8:E8", "D9", "E9", "D10", "E10", "SS", "GB-SS", "FB-SS", vals)
     _position_block(ws_, "F8:G8", "F9", "G9", "F10", "G10", "2B", "GB-2B", "FB-2B", vals)
     # 3B / 1B
-    _position_block(ws_, "A11:B11", "A12", "B12", "A13", "B13", "3B", "GB-3B", "FB-3B", vals)
+    _position_block(ws_, "A11:C11", "A12", "B12", "A13", "B13", "3B", "GB-3B", "FB-3B", vals)
     _position_block(ws_, "H11:I11", "H12", "I12", "H13", "I13", "1B", "GB-1B", "FB-1B", vals)
     # P
     _position_block(ws_, "E13:F13", "E14", "F14", "E15", "F15", "P", "GB-P", "FB-P", vals)
 
-    # divider row 16 (black bar)
+    # divider
     for col in ["A","B","C","D","E","F","G","H","I"]:
         cell = ws_[f"{col}16"]
         cell.fill = PatternFill("solid", fgColor="000000")
@@ -2508,6 +2507,7 @@ for col in ["A","B","C","D","E","F","G","H","I"]:
     ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
 
 
+
 # ==========================================================
 # ✅ BUILD THE EXCEL FILE (THIS WAS MISSING)
 # ==========================================================
@@ -2530,24 +2530,22 @@ try:
         df_export.to_excel(writer, sheet_name="Season", index=False)
         ws_season = writer.sheets["Season"]
       
-# ============================
-# SEASON HEAT MAP (FULL TEAM)
-# ============================
+        # ============================
+        # SEASON HEAT MAP (FULL TEAM)
+        # ============================
+        start_row = 2  # row 1 = headers
+        end_row = ws_season.max_row
+        end_col = ws_season.max_column
 
-start_row = 2  # row 1 = headers
-end_row = ws_season.max_row
-end_col = ws_season.max_column
+        if end_row >= start_row and end_col >= 2:
+            heat_rule = ColorScaleRule(
+                start_type="min", start_color="FFFFFF",
+                mid_type="percentile", mid_value=50, mid_color="FFCC99",
+                end_type="max", end_color="8E0000",
+            )
 
-if end_row >= start_row and end_col >= 2:
-    heat_rule = ColorScaleRule(
-        start_type="min", start_color="FFFFFF",
-        mid_type="percentile", mid_value=50, mid_color="FFCC99",
-        end_type="max", end_color="8E0000",
-    )
-
-    rng = f"{get_column_letter(2)}{start_row}:{get_column_letter(end_col)}{end_row}"
-    ws_season.conditional_formatting.add(rng, heat_rule)
-
+            rng = f"{get_column_letter(2)}{start_row}:{get_column_letter(end_col)}{end_row}"
+            ws_season.conditional_formatting.add(rng, heat_rule)
 
 
         # basic readability (won’t break your other formatting)
@@ -2678,6 +2676,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
