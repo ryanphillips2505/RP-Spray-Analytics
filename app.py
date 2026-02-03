@@ -2903,11 +2903,13 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     for p in export_players:
         tab_name = _safe_sheet_name(p, used_names)
         _build_individual_spray_sheet(
-            writer.book,
-            tab_name,
-            player_name=p,
-            stats=(season_players.get(p) or {}),""
-        )
+    writer.book,
+    tab_name,
+    p,
+    (season_players.get(p) or {}),
+    ""
+)
+
 
 
     # -----------------------------
@@ -3019,6 +3021,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
