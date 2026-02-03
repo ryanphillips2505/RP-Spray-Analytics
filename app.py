@@ -2369,10 +2369,6 @@ def _build_individual_spray_sheet(
     for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J"]:
         ws.column_dimensions[col].width = 10
 
-    # Row heights
-    for r in range(1, NOTES_TOP + NOTES_HEIGHT + 5):
-        ws.row_dimensions[r].height = 18
-
     # -----------------------------
     # Header bar  ✅ value BEFORE merge
     # -----------------------------
@@ -3036,6 +3032,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
