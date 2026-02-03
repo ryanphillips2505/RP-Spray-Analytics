@@ -2317,7 +2317,7 @@ def _build_individual_spray_sheet(
     # Layout constants (matches your screenshot grid style)
     # -----------------------------
     COL_LEFT = 2   # B
-    COL_RIGHT = 10  # J
+    COL_RIGHT = 11  # k
 
     # Header bar
     HEADER_TOP = 2
@@ -2345,7 +2345,7 @@ def _build_individual_spray_sheet(
     # Log table area
     LOG_TOP = 21
     LOG_LEFT = 2   # B
-    LOG_RIGHT = 10  # j
+    LOG_RIGHT = 11  # k
     LOG_ROWS = 20
 
     # -----------------------------
@@ -2398,7 +2398,7 @@ def _build_individual_spray_sheet(
         ws.row_dimensions[rr].height = 24
 
     # 3️⃣ Bottom log numbering ONLY 1–8 (merge column B row pairs)
-    merge_pairs = [(21, 22), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (33, 34), (35, 36), (37, 38)]
+    merge_pairs = [(21, 22), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (33, 34), (35, 36), (37, 38), (39,40)]
 
     for i, (top, bot) in enumerate(merge_pairs, start=1):
         ws.merge_cells(start_row=top, start_column=2, end_row=bot, end_column=2)  # B
@@ -3021,6 +3021,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
