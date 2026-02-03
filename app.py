@@ -2315,9 +2315,6 @@ def _build_individual_spray_sheet(
     # -----------------------------
     # Layout constants (matches your screenshot grid style)
     # -----------------------------
-    # Columns used: A through J
-    # We'll center the field template across B..I
-    # NOTE: if you want micro-shifts, change these anchors only.
     COL_LEFT = 2   # B
     COL_RIGHT = 9  # I
 
@@ -2325,12 +2322,9 @@ def _build_individual_spray_sheet(
     HEADER_TOP = 2
     HEADER_BOT = 3
 
-    # Field template anchor (top-left-ish)
-    # Positions are built as little 2-col x 3-row boxes
-    # (title row, GB/FB row, % row)
-    # Each "box" is 2 columns wide.
+    # Position boxes (top-left anchored like screenshot)
     pos_boxes = {
-        "LF": (4, 4),   # (row, col) = (4, D)
+        "LF": (4, 4),   # D
         "CF": (4, 5),   # E
         "RF": (4, 7),   # G
         "SS": (8, 5),   # E
@@ -2348,7 +2342,7 @@ def _build_individual_spray_sheet(
     LOG_TOP = 21
     LOG_LEFT = 2   # B
     LOG_RIGHT = 9  # I
-    LOG_ROWS = 20  # room for entries
+    LOG_ROWS = 20
 
     # Notes box
     NOTES_TOP = LOG_TOP + LOG_ROWS + 3
@@ -2366,7 +2360,6 @@ def _build_individual_spray_sheet(
         for r in range(r1, r2 + 1):
             for c in range(c1, c2 + 1):
                 cell = ws.cell(row=r, column=c)
-                b = cell.border
                 cell.border = Border(
                     left=(thick if thick_outer and c == c1 else thin),
                     right=(thick if thick_outer and c == c2 else thin),
@@ -2374,28 +2367,32 @@ def _build_individual_spray_sheet(
                     bottom=(thick if thick_outer and r == r2 else thin),
                 )
 
-    # Column widths (match your print-friendly grid)
+    # Column widths
     ws.column_dimensions["A"].width = 2.5
-    for col in ["B","C","D","E","F","G","H","I","J"]:
+    for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J"]:
         ws.column_dimensions[col].width = 10
 
     # Row heights
-    for r in range(1, NOTES_TOP + NOTES_HEIGHT + 3):
+    for r in range(1, NOTES_TOP + NOTES_HEIGHT + 5):
         ws.row_dimensions[r].height = 18
 
     # -----------------------------
-    # Header bar
+    # Header bar  ✅ value BEFORE merge
     # -----------------------------
-    ws.merge_cells(start_row=HEADER_TOP, start_column=COL_LEFT,
-                   end_row=HEADER_BOT, end_column=COL_RIGHT)
-    hc = ws.cell(row=HEADER_TOP, column=COL_LEFT, value=str(player_name))
+    hc = ws.cell(row=HEADER_TOP, column=COL_LEFT)
+    hc.value = str(player_name)
     hc.font = Font(bold=True, size=20)
     hc.alignment = Alignment(horizontal="center", vertical="center")
     hc.fill = PatternFill("solid", fgColor="D9D9D9")
+
+    ws.merge_cells(
+        start_row=HEADER_TOP, start_column=COL_LEFT,
+        end_row=HEADER_BOT, end_column=COL_RIGHT
+    )
     border_box(HEADER_TOP, COL_LEFT, HEADER_BOT, COL_RIGHT, thick_outer=True)
 
     # -----------------------------
-    # Percent heatmap function (same logic style as your season sheet)
+    # Percent heatmap bins (same as Season style)
     # -----------------------------
     pct_bins = [
         (0.00, 0.05, None),
@@ -2439,7 +2436,7 @@ def _build_individual_spray_sheet(
         return None
 
     # -----------------------------
-    # Compute totals
+    # Totals
     # -----------------------------
     gb_total = int(stats.get("GB", 0) or 0)
     fb_total = int(stats.get("FB", 0) or 0)
@@ -2447,7 +2444,7 @@ def _build_individual_spray_sheet(
     denom = bip_total if bip_total > 0 else 0
 
     # -----------------------------
-    # Build each position box
+    # Position boxes
     # -----------------------------
     title_font = Font(bold=True, size=10)
     small_font = Font(bold=True, size=9)
@@ -2455,109 +2452,146 @@ def _build_individual_spray_sheet(
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for pos, (r0, c0) in pos_boxes.items():
-        # Box is 3 rows tall x 2 cols wide:
-        # r0: Position title (merged)
-        # r0+1: "GB" and "FB" labels (top) with counts
-        # r0+2: "%" row with % values
         r1, c1 = r0, c0
         r2, c2 = r0 + 2, c0 + 1
 
-        # Title row
-        ws.merge_cells(start_row=r1, start_column=c1, end_row=r1, end_column=c2)
-        tcell = ws.cell(row=r1, column=c1, value=pos)
+        # ✅ value BEFORE merge (prevents MergedCell crash)
+        tcell = ws.cell(row=r1, column=c1)
+        tcell.value = pos
         tcell.font = title_font
         tcell.alignment = center
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r1, end_column=c2)
 
-        # Counts row (GB / FB)
         gb_k = f"GB-{pos}"
         fb_k = f"FB-{pos}"
         gb_ct = int(stats.get(gb_k, 0) or 0)
         fb_ct = int(stats.get(fb_k, 0) or 0)
 
-        # left cell = GB count
-        ws.cell(row=r1 + 1, column=c1, value="GB").font = small_font
-        ws.cell(row=r1 + 1, column=c1).alignment = center
-        ws.cell(row=r1 + 1, column=c1).value = f"GB\n{gb_ct}"
+        # Counts row
+        cL = ws.cell(row=r1 + 1, column=c1)
+        cL.value = f"GB\n{gb_ct}"
+        cL.font = small_font
+        cL.alignment = center
 
-        # right cell = FB count
-        ws.cell(row=r1 + 1, column=c2, value="FB").font = small_font
-        ws.cell(row=r1 + 1, column=c2).alignment = center
-        ws.cell(row=r1 + 1, column=c2).value = f"FB\n{fb_ct}"
+        cR = ws.cell(row=r1 + 1, column=c2)
+        cR.value = f"FB\n{fb_ct}"
+        cR.font = small_font
+        cR.alignment = center
 
-        # % row (as % of TOTAL BIP)
+        # % row of TOTAL BIP
         gb_pct = (gb_ct / denom) if denom else 0.0
         fb_pct = (fb_ct / denom) if denom else 0.0
 
-        left_pct_cell = ws.cell(row=r1 + 2, column=c1, value=gb_pct)
-        right_pct_cell = ws.cell(row=r1 + 2, column=c2, value=fb_pct)
-
+        left_pct_cell = ws.cell(row=r1 + 2, column=c1)
+        left_pct_cell.value = gb_pct
         left_pct_cell.number_format = "0%"
-        right_pct_cell.number_format = "0%"
-
         left_pct_cell.font = val_font
-        right_pct_cell.font = val_font
         left_pct_cell.alignment = center
+
+        right_pct_cell = ws.cell(row=r1 + 2, column=c2)
+        right_pct_cell.value = fb_pct
+        right_pct_cell.number_format = "0%"
+        right_pct_cell.font = val_font
         right_pct_cell.alignment = center
 
-        # Apply heatmap fills
         f1 = pct_fill(gb_pct)
         f2 = pct_fill(fb_pct)
-        if f1: left_pct_cell.fill = f1
-        if f2: right_pct_cell.fill = f2
+        if f1:
+            left_pct_cell.fill = f1
+        if f2:
+            right_pct_cell.fill = f2
 
-        # Borders
         border_box(r1, c1, r2, c2, thick_outer=True)
 
     # -----------------------------
-    # BIP Total box
+    # BIP Total box ✅ value BEFORE merge
     # -----------------------------
-    ws.merge_cells(start_row=BIP_ROW, start_column=BIP_COL,
-                   end_row=BIP_ROW, end_column=BIP_COL + 1)
-    lab = ws.cell(row=BIP_ROW, column=BIP_COL, value="BIP - Total")
+    lab = ws.cell(row=BIP_ROW, column=BIP_COL)
+    lab.value = "BIP - Total"
     lab.font = Font(bold=True, size=10)
     lab.alignment = center
+    ws.merge_cells(
+        start_row=BIP_ROW, start_column=BIP_COL,
+        end_row=BIP_ROW, end_column=BIP_COL + 1
+    )
 
-    ws.merge_cells(start_row=BIP_ROW + 1, start_column=BIP_COL,
-                   end_row=BIP_ROW + 1, end_column=BIP_COL + 1)
-    val = ws.cell(row=BIP_ROW + 1, column=BIP_COL, value=int(bip_total))
+    val = ws.cell(row=BIP_ROW + 1, column=BIP_COL)
+    val.value = int(bip_total)
     val.font = Font(bold=True, size=12)
     val.alignment = center
+    ws.merge_cells(
+        start_row=BIP_ROW + 1, start_column=BIP_COL,
+        end_row=BIP_ROW + 1, end_column=BIP_COL + 1
+    )
 
     border_box(BIP_ROW, BIP_COL, BIP_ROW + 1, BIP_COL + 1, thick_outer=True)
 
     # -----------------------------
     # Black divider bar
     # -----------------------------
-    ws.merge_cells(start_row=LOG_TOP - 1, start_column=LOG_LEFT,
-                   end_row=LOG_TOP - 1, end_column=LOG_RIGHT)
-    bar = ws.cell(row=LOG_TOP - 1, column=LOG_LEFT, value="")
+    bar = ws.cell(row=LOG_TOP - 1, column=LOG_LEFT)
+    bar.value = ""
     bar.fill = PatternFill("solid", fgColor="000000")
-    border_box(LOG_TOP - 1, LOG_LEFT, LOG_TOP - 1, LOG_RIGHT, thick_outer=False)
+    ws.merge_cells(
+        start_row=LOG_TOP - 1, start_column=LOG_LEFT,
+        end_row=LOG_TOP - 1, end_column=LOG_RIGHT
+    )
 
     # -----------------------------
-    # Log grid (like screenshot)
+    # Log grid
     # -----------------------------
-    # Header row labels
     ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1, value="Result").font = Font(bold=True, size=10)
     ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1).alignment = center
 
-    # Draw grid
     for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
         for c in range(LOG_LEFT, LOG_RIGHT + 1):
-            ws.cell(row=r, column=c).alignment = center
-            ws.cell(row=r, column=c).font = Font(size=10)
-            ws.cell(row=r, column=c).border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            cell = ws.cell(row=r, column=c)
+            cell.alignment = center
+            cell.font = Font(size=10)
+            cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    # Outer border for the grid block
     border_box(LOG_TOP, LOG_LEFT, LOG_TOP + LOG_ROWS - 1, LOG_RIGHT, thick_outer=True)
 
-    # Result column outline
     res_col = LOG_RIGHT + 1  # J
+    ws.column_dimensions[get_column_letter(res_col)].width = 12
     for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
-        ws.cell(row=r, column=res_col).border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        ws.cell(row=r, column=res_col).alignment = center
-        ws.cell(row=r, column=res_col).font = Font(size=10)
+        cell = ws.cell(row=r, column=res_col)
+        cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        cell.alignment = center
+        cell.font = Font(size=10)
     border_box(LOG_TOP, res_col, LOG_TOP + LOG_ROWS - 1, res_col, thick_outer=True)
+
+    # -----------------------------
+    # Notes box ✅ value BEFORE merge
+    # -----------------------------
+    ncell = ws.cell(row=NOTES_TOP, column=NOTES_LEFT)
+    ncell.value = "Notes" + (f"\n\n{notes_text}" if notes_text else "")
+    ncell.font = Font(size=11)
+    ncell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+
+    ws.merge_cells(
+        start_row=NOTES_TOP, start_column=NOTES_LEFT,
+        end_row=NOTES_TOP + NOTES_HEIGHT - 1, end_column=NOTES_RIGHT + 1
+    )
+    border_box(NOTES_TOP, NOTES_LEFT, NOTES_TOP + NOTES_HEIGHT - 1, NOTES_RIGHT + 1, thick_outer=True)
+
+    # -----------------------------
+    # Print setup (portrait, fit)
+    # -----------------------------
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.35
+    ws.page_margins.bottom = 0.35
+    ws.page_margins.header = 0.15
+    ws.page_margins.footer = 0.15
+    ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
+
+    return ws
 
 
 out = BytesIO()
@@ -2565,28 +2599,79 @@ out = BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
 
-    # -------------------------------------------------
-    # INDIVIDUAL SPRAY CHART TABS (one tab per player)
-    # -------------------------------------------------
-    used_names = set([ws.title for ws in writer.book.worksheets])
+    # Build export frame
+    df_export = df_xl.copy() if df_xl is not None else pd.DataFrame()
 
-    # Build list of players to export (match what you show)
-    # Active + (optional) archived. This keeps it consistent.
+    # Insert GP (Games Played) after Player
+    if not df_export.empty and "Player" in df_export.columns:
+        def _gp_for(name):
+            try:
+                return int((season_players.get(str(name), {}) or {}).get(GP_KEY, 0) or 0)
+            except Exception:
+                return 0
+        df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
+
+    # --- Build BIP + GB%/FB% (based on total BIP = GB + FB) ---
+    if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
+        gb_vals = pd.to_numeric(df_export["GB"], errors="coerce").fillna(0)
+        fb_vals = pd.to_numeric(df_export["FB"], errors="coerce").fillna(0)
+
+        bip_vals = (gb_vals + fb_vals).fillna(0)
+        denom = bip_vals.replace({0: pd.NA})
+
+        df_export["GB%"] = (gb_vals / denom).fillna(0)
+        df_export["FB%"] = (fb_vals / denom).fillna(0)
+
+        for c in list(df_export.columns):
+            if str(c).startswith("GB-") or str(c).startswith("FB-"):
+                num = pd.to_numeric(df_export[c], errors="coerce").fillna(0)
+                df_export[c] = (num / denom).fillna(0)
+
+        df_export = df_export.drop(columns=["GB", "FB"])
+
+        cols = list(df_export.columns)
+        gb_pos = [c for c in cols if str(c).startswith("GB-")]
+        fb_pos = [c for c in cols if str(c).startswith("FB-")]
+
+        fixed_lead = ["Player"] + (["GP"] if "GP" in cols else []) + ["GB%", "FB%"]
+        rest = [c for c in cols if c not in fixed_lead and c not in gb_pos and c not in fb_pos]
+
+        df_export["BIP"] = bip_vals.astype(int)
+        df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + rest]
+
+    # Write Season sheet
+    df_export.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
+    ws = writer.book[sheet_name]
+
+    # Safety: ensure visible
+    try:
+        for _sh in writer.book.worksheets:
+            _sh.sheet_state = "visible"
+        writer.book.active = writer.book.worksheets.index(ws)
+    except Exception:
+        pass
+
+    # -----------------------------
+    # (Your existing Season formatting continues below)
+    # -----------------------------
+    # ... keep all your Season formatting code exactly as-is ...
+
+    # -------------------------------------------------
+    # ✅ INDIVIDUAL SPRAY CHART TABS (AFTER Season is written)
+    # -------------------------------------------------
+    used_names = set(sh.title for sh in writer.book.worksheets)
+
     export_players = display_players[:] if isinstance(display_players, list) else list(season_players.keys())
     export_players = [p for p in export_players if p in season_players]
 
     for p in export_players:
-        pstats = season_players.get(p, {}) or {}
         tab_name = _safe_sheet_name(p, used_names)
-
-        # If you want per-player notes later, you already have db_get_player_notes()
-        # Right now we’ll leave it blank unless you wire it in.
         _build_individual_spray_sheet(
             writer.book,
             tab_name,
             player_name=p,
-            stats=pstats,
-            notes_text="",   # you can wire player notes here later if you want
+            stats=(season_players.get(p) or {}),
+            notes_text=""
         )
 
 
@@ -2980,6 +3065,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
