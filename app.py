@@ -2369,6 +2369,7 @@ def _build_individual_spray_sheet(
     for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]:
         ws.column_dimensions[col].width = 10
 
+
     # -----------------------------
     # Header bar  ✅ value BEFORE merge
     # -----------------------------
@@ -3030,6 +3031,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
