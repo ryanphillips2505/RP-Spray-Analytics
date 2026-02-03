@@ -2324,15 +2324,18 @@ def _build_individual_spray_sheet(
 
     # Position boxes (top-left anchored like screenshot)
     pos_boxes = {
-        "LF": (4, 4),   # D
-        "CF": (4, 5),   # E
-        "RF": (4, 7),   # G
-        "SS": (8, 5),   # E
-        "2B": (8, 7),   # G
-        "3B": (12, 4),  # D
-        "P":  (14, 6),  # F
-        "1B": (12, 8),  # H
-    }
+    "LF": (4, 4),   # D-E
+    "CF": (4, 6),   # F-G   ✅ moved so it doesn't overlap LF
+    "RF": (4, 8),   # H-I
+
+    "SS": (8, 5),   # E-F
+    "2B": (8, 7),   # G-H
+
+    "3B": (12, 4),  # D-E
+    "P":  (14, 6),  # F-G
+    "1B": (12, 8),  # H-I
+}
+
 
     # BIP Total box
     BIP_ROW = 17
@@ -3065,6 +3068,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
