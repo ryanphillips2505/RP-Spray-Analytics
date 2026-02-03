@@ -2299,7 +2299,6 @@ def _build_individual_spray_sheet(
     sheet_name: str,
     player_name: str,
     stats: dict,
-    notes_text: str = "",
 ):
     """
     Builds the EXACT style 'Individual Spray' tab:
@@ -3032,6 +3031,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
