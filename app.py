@@ -67,9 +67,8 @@ import pandas as pd
 from io import BytesIO
 
 from openpyxl.utils import get_column_letter
-from openpyxl.formatting.rule import ColorScaleRule
+from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
 from supabase import create_client, Client
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -297,12 +296,17 @@ TEAM_CFG = _load_team_cfg_from_file(TEAM_CODE) or {}
 # TERMS OF USE — HARD GATE (PAGE-LEVEL)
 # ===============================
 _TERMS_KEY = f"terms_accepted__{str(TEAM_CODE).strip().upper()}"
-_AGREE_KEY = f"terms_agree__{str(TEAM_CODE).strip().upper()}"
 
 if _TERMS_KEY not in st.session_state:
     st.session_state[_TERMS_KEY] = False
 
 if not st.session_state[_TERMS_KEY]:
+
+    st.set_page_config(
+        page_title="RP Spray Analytics — Terms of Use",
+        page_icon="⚾",
+        layout="centered",
+    )
 
     st.title("Terms of Use")
 
@@ -321,9 +325,9 @@ Licenses are issued per program, per season. One license covers unlimited games,
 Access is restricted to authorized coaches and staff of the licensed program. Access codes may not be shared, transferred, or reused by another team, individual, or organization.
 
 4. PROHIBITED USE
-• Unauthorized copying, redistribution, resale, sublicensing, or public sharing
-• Reverse engineering, decompilation, or replication of logic or outputs
-• Competitive, commercial, or third-party use
+• Unauthorized copying, redistribution, resale, sublicensing, or public sharing  
+• Reverse engineering, decompilation, or replication of logic or outputs  
+• Competitive, commercial, or third-party use  
 
 5. DATA OWNERSHIP
 Teams retain ownership of raw data. All analytics, workflows, and outputs remain proprietary.
@@ -335,7 +339,7 @@ Access may be revoked immediately for violations without refund.
     st.markdown(
         f"""
         <div style="
-            height: 360px;
+            max-height: 360px;
             overflow-y: auto;
             padding: 16px;
             border: 1px solid #d1d5db;
@@ -349,18 +353,18 @@ Access may be revoked immediately for violations without refund.
         unsafe_allow_html=True,
     )
 
-    with st.form(key=f"terms_form__{str(TEAM_CODE).strip().upper()}"):
-        st.checkbox("I have read and agree to the Terms of Use", key=_AGREE_KEY)
-        submitted = st.form_submit_button("Continue")
+    agree = st.checkbox("I have read and agree to the Terms of Use")
 
-    if submitted:
-        if st.session_state.get(_AGREE_KEY, False):
+    if st.button("Continue"):
+        if agree:
             st.session_state[_TERMS_KEY] = True
             st.rerun()
         else:
             st.warning("You must agree before continuing.")
 
-    st.stop()  # ✅ ONLY stop while locked
+    st.stop()
+
+
 
 # -----------------------------
 # RESOLVED TEAM BRANDING (logo + background)
@@ -1996,32 +2000,25 @@ default_cols = [c for c in default_cols if c in all_cols]
 if "Player" in all_cols and "Player" not in default_cols:
     default_cols = ["Player"] + default_cols
 
-# -----------------------------
-# STAT FILTERS (Popover / Expander)
-# -----------------------------
-with stat_edit_slot.container():
 
+
+# Render Stat Edit in the same row as the archived checkbox (top-right)
+with stat_edit_slot.container():
+    st.markdown('<div class="stat-edit-wrap">', unsafe_allow_html=True)
     if hasattr(st, "popover"):
         with st.popover("⚙ Stat Filters"):
             st.caption("Toggle which stats show in the table")
-            flt = st.text_input(
-                "Search",
-                value="",
-                placeholder="Type to filter stats...",
-                key=f"{cols_key}__flt",
-            )
+            flt = st.text_input("Search", value="", placeholder="Type to filter stats...", key=f"{cols_key}__flt")
 
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
-                all_clicked = st.button(
-                    "All", key=f"{cols_key}__all", use_container_width=True
-                )
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                none_clicked = st.button(
-                    "None", key=f"{cols_key}__none", use_container_width=True
-                )
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
+            with c3:
+                st.caption(" ")
 
-            # Apply All / None
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
             if all_clicked or none_clicked:
                 for _col in all_cols:
                     _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
@@ -2031,71 +2028,53 @@ with stat_edit_slot.container():
                     else:
                         st.session_state[_k] = True if all_clicked else False
 
-                st.session_state[cols_key] = (
-                    list(all_cols)
-                    if all_clicked
-                    else (["Player"] if "Player" in all_cols else [])
-                )
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
                 st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
             if "Player" in all_cols:
-                picked_set.add("Player")
+                picked_set.add("Player")  # lock Player ON
 
             view_cols = list(all_cols)
             if flt.strip():
                 q = flt.strip().lower()
                 view_cols = [c for c in view_cols if q in str(c).lower()]
 
+            # Scroll so the popover stays compact
             with st.container(height=360):
                 if "Player" in view_cols:
-                    st.checkbox(
-                        "Player",
-                        value=True,
-                        disabled=True,
-                        key=f"{cols_key}__cb__Player",
-                    )
+                    st.checkbox("Player", value=True, disabled=True, key=f"{cols_key}__cb__Player")
                     view_cols = [c for c in view_cols if c != "Player"]
 
                 colA, colB, colC = st.columns(3)
                 grid = [colA, colB, colC]
-
                 for i, col in enumerate(view_cols):
                     target = grid[i % 3]
                     safe_col = re.sub(r"[^A-Za-z0-9_]+", "_", str(col))
                     cur_val = col in picked_set
-                    new_val = target.checkbox(
-                        str(col),
-                        value=cur_val,
-                        key=f"{cols_key}__cb__{safe_col}",
-                    )
+                    new_val = target.checkbox(str(col), value=cur_val, key=f"{cols_key}__cb__{safe_col}")
                     if new_val:
                         picked_set.add(col)
                     else:
                         picked_set.discard(col)
 
-            st.session_state[cols_key] = [c for c in all_cols if c in picked_set]
+            picked = [c for c in all_cols if c in picked_set]
+            st.session_state[cols_key] = picked
 
     else:
         with st.expander("⚙ Stat Filters", expanded=False):
             st.caption("Toggle which stats show in the table")
-            flt = st.text_input(
-                "Search",
-                value="",
-                placeholder="Type to filter stats...",
-                key=f"{cols_key}__flt",
-            )
+            flt = st.text_input("Search", value="", placeholder="Type to filter stats...", key=f"{cols_key}__flt")
 
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
-                all_clicked = st.button(
-                    "All", key=f"{cols_key}__all", use_container_width=True
-                )
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                none_clicked = st.button(
-                    "None", key=f"{cols_key}__none", use_container_width=True
-                )
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
+            with c3:
+                st.caption(" ")
 
+            # Make All/None actually drive the checkbox states (Streamlit checkboxes are keyed)
             if all_clicked or none_clicked:
                 for _col in all_cols:
                     _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
@@ -2105,80 +2084,74 @@ with stat_edit_slot.container():
                     else:
                         st.session_state[_k] = True if all_clicked else False
 
-                st.session_state[cols_key] = (
-                    list(all_cols)
-                    if all_clicked
-                    else (["Player"] if "Player" in all_cols else [])
-                )
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
                 st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
             if "Player" in all_cols:
-                picked_set.add("Player")
+                picked_set.add("Player")  # lock Player ON
 
             view_cols = list(all_cols)
             if flt.strip():
                 q = flt.strip().lower()
                 view_cols = [c for c in view_cols if q in str(c).lower()]
 
+            # Scroll so the popover stays compact
             with st.container(height=360):
                 if "Player" in view_cols:
-                    st.checkbox(
-                        "Player",
-                        value=True,
-                        disabled=True,
-                        key=f"{cols_key}__cb__Player",
-                    )
+                    st.checkbox("Player", value=True, disabled=True, key=f"{cols_key}__cb__Player")
                     view_cols = [c for c in view_cols if c != "Player"]
 
                 colA, colB, colC = st.columns(3)
                 grid = [colA, colB, colC]
-
                 for i, col in enumerate(view_cols):
                     target = grid[i % 3]
                     safe_col = re.sub(r"[^A-Za-z0-9_]+", "_", str(col))
                     cur_val = col in picked_set
-                    new_val = target.checkbox(
-                        str(col),
-                        value=cur_val,
-                        key=f"{cols_key}__cb__{safe_col}",
-                    )
+                    new_val = target.checkbox(str(col), value=cur_val, key=f"{cols_key}__cb__{safe_col}")
                     if new_val:
                         picked_set.add(col)
                     else:
                         picked_set.discard(col)
 
-            st.session_state[cols_key] = [c for c in all_cols if c in picked_set]
+            picked = [c for c in all_cols if c in picked_set]
+            st.session_state[cols_key] = picked
 
 
-# -----------------------------
-# APPLY COLUMN SELECTION
-# -----------------------------
-picked_cols = [
-    c for c in st.session_state.get(cols_key, []) if c in df_season.columns
-]
+    # Ensure Player stays visible (failsafe)
+    picked = list(st.session_state.get(cols_key, default_cols))
+    if "Player" in all_cols and "Player" not in picked:
+        picked = ["Player"] + picked
+        st.session_state[cols_key] = picked
 
-if "Player" in df_season.columns and "Player" not in picked_cols:
-    picked_cols = ["Player"] + picked_cols
+    st.markdown("</div>", unsafe_allow_html=True)
 
+# Apply the selection
+picked_cols = [c for c in st.session_state.get(cols_key, []) if c in all_cols]
 df_show = df_season[picked_cols] if picked_cols else df_season
 
-# -----------------------------
-# VISIBLE COLS (for CSV / downloads)
-# -----------------------------
-if df_show is not None and not df_show.empty:
-    visible_cols = list(df_show.columns)
-else:
-    visible_cols = list(df_season.columns) if df_season is not None else []
 
 # -----------------------------
-# TABLE RENDER (NO EMPTY GAP)
+# CURRENT VIEW COLUMNS (Stat Edit -> downloads)
 # -----------------------------
-if df_show is None or df_show.empty:
-    st.info("No season stats to display yet. Process at least one game to generate season totals.")
-else:
-    st.dataframe(df_show, use_container_width=True)
+# Build visible_cols safely for both table display and downloads.
+try:
+    _vc = st.session_state.get(cols_key, list(df_season.columns))
+except Exception:
+    _vc = list(df_season.columns)
 
+if not isinstance(_vc, (list, tuple)):
+    _vc = list(df_season.columns)
+
+visible_cols = [c for c in _vc if c in df_season.columns]
+
+# Always keep Player if it exists
+if "Player" in df_season.columns and "Player" not in visible_cols:
+    visible_cols = ["Player"] + visible_cols
+
+if len(visible_cols) == 0:
+    visible_cols = list(df_season.columns)
+st.dataframe(df_show, use_container_width=True)
 
 # -----------------------------
 # 📝 COACHES SCOUTING NOTES (per selected opponent/team)
@@ -2213,11 +2186,7 @@ with st.expander("📝 Coaches Scouting Notes (prints on Excel/CSV)", expanded=F
 
 notes_box_text = str(st.session_state.get(notes_key, "") or "").strip()
 
-_csv_text = (
-    df_season[[c for c in visible_cols if c in df_season.columns]].to_csv(index=False)
-    if (df_season is not None and not df_season.empty)
-    else ""
-)
+_csv_text = (df_season[visible_cols].to_csv(index=False) if (df_season is not None and not df_season.empty) else '')
 
 # CSV can't merge cells, but we can push notes to the bottom for printing
 if notes_box_text:
@@ -2276,459 +2245,388 @@ else:
 
 out = BytesIO()
 
-# ==========================================================
-# SEASON REPORT (EXCEL) + INDIVIDUAL PLAYER TABS
-# ==========================================================
+# -----------------------------
+# SEASON REPORT (EXCEL) — PRINT-STYLE FORMATTING
+#   - Row 1: Team Name header (merged, 28pt)
+#   - Row 2: Column headers (12pt)
+#   - Rows 3+: Player rows (35 height, 12pt; Player bold)
+#   - GB/FB totals converted to percentages (GB% / FB%) and excluded from heatmap
+#   - Discrete "real heat map" bins for remaining numeric stats
+#   - Thick vertical borders separating GB block, FB block, RUN block
+#   - Watermark via print header
+# -----------------------------
+with pd.ExcelWriter(out, engine="openpyxl") as writer:
+    sheet_name = "Season"
 
-from openpyxl.cell.cell import MergedCell
-from openpyxl.utils.cell import range_boundaries
+        # Build export frame
+    df_export = df_xl.copy() if df_xl is not None else pd.DataFrame()
 
-def _safe_sheet_name(name: str) -> str:
-    name = str(name or "").strip()
-    name = re.sub(r'[:\\/?*\[\]]', "", name)  # invalid Excel sheet chars
-    name = re.sub(r"\s+", " ", name)
-    return name[:31] if name else "Player"
+    # Insert GP (Games Played) after Player
+    if not df_export.empty and "Player" in df_export.columns:
+        def _gp_for(name):
+            try:
+                return int((season_players.get(str(name), {}) or {}).get(GP_KEY, 0) or 0)
+            except Exception:
+                return 0
+        df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
 
-def _unique_sheet_name(wb, base: str) -> str:
-    if base not in wb.sheetnames:
-        return base
-    i = 2
-    while True:
-        suffix = f" {i}"
-        cand = (base[:31 - len(suffix)] + suffix)[:31]
-        if cand not in wb.sheetnames:
-            return cand
-        i += 1
+    # --- Build BIP + GB%/FB% (based on total BIP = GB + FB) ---
+    # NOTE: Your df_season currently has GB and FB totals present before COMBO columns.
+    if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
+        gb_vals = pd.to_numeric(df_export["GB"], errors="coerce").fillna(0)
+        fb_vals = pd.to_numeric(df_export["FB"], errors="coerce").fillna(0)
 
-def _safe_float(x):
+        bip_vals = (gb_vals + fb_vals).fillna(0)
+        denom = bip_vals.replace({0: pd.NA})
+
+        # Percent columns (DO NOT heatmap these)
+        df_export["GB%"] = (gb_vals / denom).fillna(0)
+        df_export["FB%"] = (fb_vals / denom).fillna(0)
+
+        # Convert positional columns (GB-* and FB-*) to % of TOTAL BIP
+        for c in list(df_export.columns):
+            if str(c).startswith("GB-") or str(c).startswith("FB-"):
+                num = pd.to_numeric(df_export[c], errors="coerce").fillna(0)
+                df_export[c] = (num / denom).fillna(0)
+
+        # Drop raw GB/FB totals (we're showing GB%/FB% now)
+        df_export = df_export.drop(columns=["GB", "FB"])
+
+        # Put columns in the order you want:
+        # Player, GP, GB%, FB%, GB-*, FB-*, BIP
+        cols = list(df_export.columns)
+
+        gb_pos = [c for c in cols if str(c).startswith("GB-")]
+        fb_pos = [c for c in cols if str(c).startswith("FB-")]
+
+        # Keep any other columns (if they exist) after BIP
+        fixed_lead = ["Player"] + (["GP"] if "GP" in cols else []) + ["GB%", "FB%"]
+        rest = [c for c in cols if c not in fixed_lead and c not in gb_pos and c not in fb_pos]
+
+        # Add BIP at the end of FB block (immediately after FB-P)
+        df_export["BIP"] = bip_vals.astype(int)
+
+        df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + rest]
+
+    # Write to Excel
+    df_export.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
+    ws = writer.book[sheet_name]
+
+    # Safety: ensure visible
     try:
-        return float(x)
-    except Exception:
-        return 0.0
-
-# --- orange → red bins (match TEAM heat map style) ---
-_pct_bins_player = [
-    (0.00, 0.05, None),
-    (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
-    (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
-    (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
-    (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
-    (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
-    (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
-    (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
-    (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
-    (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
-    (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
-    (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
-    (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
-    (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
-    (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
-    (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
-    (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
-    (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
-    (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
-    (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
-]
-
-def _pct_fill_player(v):
-    x = _safe_float(v)
-    if x <= 0:
-        return None
-    if x > 1:
-        x = 1.0
-    for lo, hi, fill in _pct_bins_player:
-        if fill is None:
-            continue
-        if (lo <= x < hi) or (hi == 1.00 and lo <= x <= hi):
-            return fill
-    return None
-
-_center = Alignment(horizontal="center", vertical="center")
-_thin  = Side(style="thin",  color="000000")
-_thick = Side(style="thick", color="000000")
-
-_box_thick = Border(left=_thick, right=_thick, top=_thick, bottom=_thick)
-
-_title_font = Font(bold=True, size=20)
-_label_font = Font(bold=True, size=12)
-_val_font   = Font(bold=True, size=12)
-_gbfb_font  = Font(bold=True, size=11)
-
-# ✅ light grey for position header cells
-_pos_fill = PatternFill("solid", fgColor="F2F2F2")
-
-def _clear_sheet_safely(ws_):
-    try:
-        for rng in list(ws_.merged_cells.ranges):
-            ws_.unmerge_cells(str(rng))
+        for _sh in writer.book.worksheets:
+            _sh.sheet_state = "visible"
+        writer.book.active = writer.book.worksheets.index(ws)
     except Exception:
         pass
 
-    for r in range(1, 80):
-        for c in range(1, 30):
-            cell = ws_.cell(row=r, column=c)
-            if isinstance(cell, MergedCell):
-                continue
-            cell.value = None
-            cell.border = Border()
-            cell.fill = PatternFill()
-            cell.alignment = Alignment()
+    # Team title row (Row 1)
+    total_cols = max(1, ws.max_column)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+    title_cell = ws.cell(row=1, column=1, value=str(selected_team))
+    title_cell.font = Font(bold=True, size=28)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
 
-def _apply_outer_thick_border(ws_, rng: str):
-    min_col, min_row, max_col, max_row = range_boundaries(rng)
-    for r in range(min_row, max_row + 1):
-        for c in range(min_col, max_col + 1):
-            cell = ws_.cell(row=r, column=c)
-            left   = _thick if c == min_col else _thin
-            right  = _thick if c == max_col else _thin
-            top    = _thick if r == min_row else _thin
-            bottom = _thick if r == max_row else _thin
-            cell.border = Border(left=left, right=right, top=top, bottom=bottom)
+    ws.freeze_panes = "A3"
 
-def _set_pct_cell(ws_, addr, v):
-    c = ws_[addr]
-    c.value = _safe_float(v)
-    c.number_format = "0%"
-    c.font = _val_font
-    c.alignment = _center
-    c.border = _box_thick
-    f = _pct_fill_player(c.value)
-    if f:
-        c.fill = f
+    # Row heights
+    ws.row_dimensions[1].height = 35
+    ws.row_dimensions[2].height = 35
+    for r in range(3, ws.max_row + 1):
+        ws.row_dimensions[r].height = 35
 
-def _position_block(ws_, label_rng, gb_addr, fb_addr, val_gb_addr, val_fb_addr,
-                    label_text, gb_key, fb_key, vals):
-    """
-    Position block layout:
-      - merged position cell (grey fill)
-      - GB/FB labels row
-      - values row (percent)
-    """
-    ws_.merge_cells(label_rng)
-    tl = ws_[label_rng.split(":")[0]]
-    tl.value = label_text
-    tl.font = _label_font
-    tl.alignment = _center
-    tl.fill = _pos_fill
-    _apply_outer_thick_border(ws_, label_rng)
+    # Header styling (Row 2)
+    header_font = Font(bold=True, size=12)
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
+    for cell in ws[2]:
+        cell.font = header_font
+        cell.alignment = header_align
+        cell.fill = header_fill
 
-    gb = ws_[gb_addr]
-    fb = ws_[fb_addr]
-    gb.value = "GB"
-    fb.value = "FB"
-    for c in (gb, fb):
-        c.font = _gbfb_font
-        c.alignment = _center
-        c.border = _box_thick
+    # Player column formatting
+    player_col_idx = None
+    for j in range(1, ws.max_column + 1):
+        if str(ws.cell(row=2, column=j).value).strip() == "Player":
+            player_col_idx = j
+            break
 
-    _set_pct_cell(ws_, val_gb_addr, vals.get(gb_key, 0))
-    _set_pct_cell(ws_, val_fb_addr, vals.get(fb_key, 0))
+    body_font = Font(size=12)
+    player_font = Font(size=12, bold=True)
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+    for r in range(3, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.font = body_font
+            cell.alignment = center_align
+            if player_col_idx and c == player_col_idx:
+                cell.font = player_font
+                cell.alignment = left_align
 
-def _build_player_scout_sheet(ws_, player_name, stats):
-    gb = int(stats.get("GB", 0) or 0)
-    fb = int(stats.get("FB", 0) or 0)
-    bip = gb + fb
+    # Autosize Player col
+    if player_col_idx:
+        max_len = len("Player")
+        try:
+            series = df_export["Player"].astype(str).tolist() if "Player" in df_export.columns else []
+            for v in series[:200]:
+                max_len = max(max_len, len(v))
+        except Exception:
+            pass
+        ws.column_dimensions[get_column_letter(player_col_idx)].width = min(max(max_len + 2, 12), 34)
 
-    vals = {}
-    for ck in COMBO_KEYS:
-        raw = float(stats.get(ck, 0) or 0)
-        vals[ck] = (raw / bip) if bip else 0.0
-    vals["BIP"] = int(bip)
+    # Identify key columns
+    gbp_idx = None
+    fbp_idx = None
+    gp_idx = None
+    bip_idx = None
 
-    _clear_sheet_safely(ws_)
+    headers = [str(ws.cell(row=2, column=j).value or "").strip() for j in range(1, ws.max_column + 1)]
+    for j, h in enumerate(headers, start=1):
+        if h == "GB%":
+            gbp_idx = j
+        elif h == "FB%":
+            fbp_idx = j
+        elif h == "GP":
+            gp_idx = j
+        elif h == "BIP":
+            bip_idx = j
 
-    # widths — keep all columns uniform
-    for col in ["A","B","C","D","E","F","G","H","I"]:
-        ws_.column_dimensions[col].width = 13
+    # Format GB%/FB% as percent
+    if gbp_idx:
+        L = get_column_letter(gbp_idx)
+        for r in range(3, ws.max_row + 1):
+            ws[f"{L}{r}"].number_format = "0%"
+    if fbp_idx:
+        L = get_column_letter(fbp_idx)
+        for r in range(3, ws.max_row + 1):
+            ws[f"{L}{r}"].number_format = "0%"
 
-    # heights
-    for rr in range(1, 41):
-        ws_.row_dimensions[rr].height = 20
-    ws_.row_dimensions[1].height = 30
-    ws_.row_dimensions[16].height = 10
+    # Format positional % columns as percent too
+    for j, h in enumerate(headers, start=1):
+        if h.startswith("GB-") or h.startswith("FB-"):
+            L = get_column_letter(j)
+            for r in range(3, ws.max_row + 1):
+                ws[f"{L}{r}"].number_format = "0%"
 
-    # title
-    ws_.merge_cells("A1:I1")
-    t = ws_["A1"]
-    t.value = str(player_name)
-    t.font = _title_font
-    t.alignment = _center
-    _apply_outer_thick_border(ws_, "A1:I1")
+    # Thick borders helpers
+    thick_side = Side(style="thick", color="000000")
 
-    # CF
-    _position_block(ws_, "E3:F3", "E4", "F4", "E5", "F5", "CF", "GB-CF", "FB-CF", vals)
-    # LF / RF
-    _position_block(ws_, "C5:D5", "C6", "D6", "C7", "D7", "LF", "GB-LF", "FB-LF", vals)
-    _position_block(ws_, "G5:H5", "G6", "H6", "G7", "H7", "RF", "GB-RF", "FB-RF", vals)
-    # SS / 2B
-    _position_block(ws_, "D8:E8", "D9", "E9", "D10", "E10", "SS", "GB-SS", "FB-SS", vals)
-    _position_block(ws_, "F8:G8", "F9", "G9", "F10", "G10", "2B", "GB-2B", "FB-2B", vals)
-    # 3B / 1B
-    _position_block(ws_, "A11:C11", "A12", "B12", "A13", "B13", "3B", "GB-3B", "FB-3B", vals)
-    _position_block(ws_, "H11:I11", "H12", "I12", "H13", "I13", "1B", "GB-1B", "FB-1B", vals)
-    # P
-    _position_block(ws_, "E13:F13", "E14", "F14", "E15", "F15", "P", "GB-P", "FB-P", vals)
+    def _set_right_thick(col_idx: int):
+        for r in range(2, ws.max_row + 1):
+            cell = ws.cell(row=r, column=col_idx)
+            b = cell.border
+            cell.border = Border(
+                left=b.left,
+                right=thick_side,
+                top=b.top,
+                bottom=b.bottom,
+            )
 
-    # divider
-    for col in ["A","B","C","D","E","F","G","H","I"]:
-        cell = ws_[f"{col}16"]
-        cell.fill = PatternFill("solid", fgColor="000000")
-        cell.border = Border(top=_thick, bottom=_thick)
+    # Thick vertical border after FB% (same as before)
+    if fbp_idx:
+        _set_right_thick(fbp_idx)
 
-    # BIP box
-    ws_.merge_cells("B17:D17")
-    b1 = ws_["B17"]
-    b1.value = "BIP"
-    b1.font = Font(bold=True, size=12)
-    b1.alignment = _center
-    b1.fill = PatternFill("solid", fgColor="E5E7EB")
-    _apply_outer_thick_border(ws_, "B17:D17")
+    # Thick border after last GB- and last FB-
+    def _last_idx(prefix: str):
+        last = None
+        for j, h in enumerate(headers, start=1):
+            if h.startswith(prefix):
+                last = j
+        return last
 
-    ws_.merge_cells("B18:D18")
-    b2 = ws_["B18"]
-    b2.value = int(vals.get("BIP", 0) or 0)
-    b2.font = Font(bold=True, size=14)
-    b2.alignment = _center
-    _apply_outer_thick_border(ws_, "B18:D18")
+    gb_end = _last_idx("GB-")
+    fb_end = _last_idx("FB-")
 
-    # print setup
-    ws_.print_area = "A1:I40"
-    ws_.page_setup.orientation = ws_.ORIENTATION_PORTRAIT
-    ws_.page_setup.fitToWidth = 1
-    ws_.page_setup.fitToHeight = 1
-    ws_.sheet_properties.pageSetUpPr.fitToPage = True
-    ws_.print_options.horizontalCentered = True
-    ws_.page_margins.left = 0.25
-    ws_.page_margins.right = 0.25
-    ws_.page_margins.top = 0.35
-    ws_.page_margins.bottom = 0.35
-    ws_.page_margins.header = 0.15
-    ws_.page_margins.footer = 0.15
-    ws_.page_setup.paperSize = ws_.PAPERSIZE_LETTER
+    if gb_end:
+        _set_right_thick(gb_end)
+    if fb_end:
+        _set_right_thick(fb_end)  # this becomes the thick border immediately LEFT of BIP
 
+    # -----------------------------
+    # HEATMAPS
+    #   1) GP numeric heatmap (keep your existing scheme)
+    #   2) Positional % heatmap (your percent bins + same orange→red scheme)
+    #   NO heatmap on GB% / FB% / BIP
+    # -----------------------------
+    # GP numeric heatmap fills (same scheme you had)
+    gp_fill_1_5   = PatternFill("solid", fgColor="FFE5CC")
+    gp_fill_6_10  = PatternFill("solid", fgColor="FFCC99")
+    gp_fill_11_15 = PatternFill("solid", fgColor="FFB266")
+    gp_fill_16_19 = PatternFill("solid", fgColor="FF9933")
+    gp_fill_20p   = PatternFill("solid", fgColor="F8696B")
 
-
-# ==========================================================
-# ✅ BUILD THE EXCEL FILE (THIS WAS MISSING)
-# ==========================================================
-out = BytesIO()
-
-with pd.ExcelWriter(out, engine="openpyxl") as writer:
-
-    # --- SEASON SHEET ---
-    # df_xl is built above in your code. Use it if present, otherwise safe fallback.
-    df_export = None
-    try:
-        df_export = df_xl.copy() if isinstance(df_xl, pd.DataFrame) else None
-    except Exception:
-        df_export = None
-
-    if df_export is None or df_export.empty:
-        df_export = pd.DataFrame(columns=["Player"])
-
-    df_export.to_excel(writer, sheet_name="Season", index=False)
-    ws_season = writer.sheets["Season"]
-
-    # ============================
-    # FORMAT % COLUMNS (GB% / FB%) AS PERCENT
-    # ============================
-    header_map = {}
-    for c in range(1, ws_season.max_column + 1):
-        v = ws_season.cell(row=1, column=c).value
-        if v is not None:
-            header_map[str(v).strip()] = c
-
-    for pct_name in ("GB%", "FB%"):
-        if pct_name in header_map:
-            cidx = header_map[pct_name]
-            for r in range(2, ws_season.max_row + 1):
-                ws_season.cell(row=r, column=cidx).number_format = "0%"
-
-    # ============================
-    # SEASON HEAT MAP (DISCRETE BINS)
-    # - applies to numeric columns only
-    # - excludes GB% and FB%
-    # ============================
-    exclude_cols = {"GB%", "FB%"}  # keep visible but DO NOT heatmap them
-
-    # Discrete bins (0–5% = no fill; then orange → red)
+       # -----------------------------
+    # PERCENT HEATMAP (BIP % columns only)
+    # 0-5% = white, then every .05 gets darker to 1.00
+    # -----------------------------
     pct_bins = [
         (0.00, 0.05, None),
         (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
-        (0.10, 0.15, PatternFill("solid", fgColor="FFCC99")),
-        (0.15, 0.20, PatternFill("solid", fgColor="FFB266")),
-        (0.20, 0.25, PatternFill("solid", fgColor="FF9933")),
-        (0.25, 0.30, PatternFill("solid", fgColor="F8A5A5")),
-        (0.30, 0.35, PatternFill("solid", fgColor="F8696B")),
-        (0.35, 0.45, PatternFill("solid", fgColor="E53935")),
-        (0.45, 0.60, PatternFill("solid", fgColor="D32F2F")),
-        (0.60, 1.01, PatternFill("solid", fgColor="B71C1C")),
+        (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
+        (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
+        (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
+        (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
+        (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
+        (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
+        (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
+        (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
+        (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
+        (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
+        (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
+        (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
+        (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
+        (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
+        (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
+        (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
+        (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
+        (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
     ]
 
-    def _to_float(x):
+    def _pct_fill(v):
+        if v is None or v == "":
+            return None
         try:
-            return float(x)
+            x = float(v)
         except Exception:
             return None
 
-    def _fill_for_ratio(ratio):
-        if ratio is None:
-            return None
-        if ratio < 0:
-            ratio = 0.0
-        if ratio > 1:
-            ratio = 1.0
+        # clamp to [0, 1]
+        if x < 0:
+            x = 0.0
+        if x > 1:
+            x = 1.0
+
         for lo, hi, fill in pct_bins:
-            if fill is None:
-                continue
-            if lo <= ratio < hi:
+            if lo <= x <= hi:
                 return fill
         return None
 
-    start_row = 2  # row 1 headers
-    end_row = ws_season.max_row
-    end_col = ws_season.max_column
+ 
 
-    if end_row >= start_row and end_col >= 2:
-        # Loop through each data column (skip Player column)
-        for c in range(2, end_col + 1):
-            col_name = str(ws_season.cell(row=1, column=c).value or "").strip()
-            if not col_name:
+    def _pct_fill(v):
+        for lo, hi, f in pct_bins:
+            if lo <= v <= hi:
+                return f
+        return None
+
+    # Apply GP heatmap only on GP column
+    if gp_idx:
+        for r in range(3, ws.max_row + 1):
+            cell = ws.cell(row=r, column=gp_idx)
+            try:
+                v = float(cell.value or 0)
+            except Exception:
                 continue
-            if col_name in exclude_cols:
+            if v <= 0:
+                continue
+            if v >= 20:
+                cell.fill = gp_fill_20p
+            elif 16 <= v <= 19:
+                cell.fill = gp_fill_16_19
+            elif 11 <= v <= 15:
+                cell.fill = gp_fill_11_15
+            elif 6 <= v <= 10:
+                cell.fill = gp_fill_6_10
+            elif 1 <= v <= 5:
+                cell.fill = gp_fill_1_5
+
+    # Apply percent heatmap only to positional columns (GB-* and FB-*)
+    for r in range(3, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            h = str(ws.cell(row=2, column=c).value or "").strip()
+            if not (h.startswith("GB-") or h.startswith("FB-")):
                 continue
 
-            # Gather numeric values for this column
-            vals = []
-            for r in range(start_row, end_row + 1):
-                v = _to_float(ws_season.cell(row=r, column=c).value)
-                if v is not None:
-                    vals.append(v)
-
-            if not vals:
+            cell = ws.cell(row=r, column=c)
+            try:
+                v = float(cell.value or 0)
+            except Exception:
                 continue
 
-            vmax = max(vals)
-            if vmax == 0:
-                continue
+            if v <= 0:
+                continue  # keep white
 
-            # Fill cells based on value/max for that column
-            for r in range(start_row, end_row + 1):
-                cell = ws_season.cell(row=r, column=c)
-                v = _to_float(cell.value)
-                if v is None:
-                    continue
-                ratio = v / vmax
-                f = _fill_for_ratio(ratio)
-                if f:
-                    cell.fill = f
+            f = _pct_fill(v)
+            if f:
+                cell.fill = f
 
-    # basic readability (won’t break your other formatting)
-    ws_season.freeze_panes = "A3"
-    ws_season.row_dimensions[1].height = 30
-    ws_season.row_dimensions[2].height = 20
+    # Watermark via print header
+    try:
+        ws.oddHeader.center.text = "RP Spray Analytics"
+        ws.oddHeader.center.font = "Tahoma,Bold"
+        ws.oddHeader.center.size = 14
+        ws.oddHeader.center.color = "808080"
+    except Exception:
+        pass
 
-    # --- COACH NOTES BOX on Season sheet ---
-    notes_box_text_local = str(notes_box_text or "").strip()
-    if notes_box_text_local:
-        top_row = ws_season.max_row + 4
+    # Print setup
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.35
+    ws.page_margins.bottom = 0.35
+    ws.page_margins.header = 0.15
+    ws.page_margins.footer = 0.15
+    ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
+
+    # -----------------------------
+    # COACH NOTES BOX (EXCEL)
+    # -----------------------------
+    if notes_box_text:
+        top_row = ws.max_row + 6
         left_col = 1
-        right_col = max(1, ws_season.max_column)
+        right_col = ws.max_column
         box_height = 10
 
-        ws_season.merge_cells(
+        ws.merge_cells(
             start_row=top_row,
             start_column=left_col,
             end_row=top_row + box_height - 1,
             end_column=right_col,
         )
-        note_cell = ws_season.cell(row=top_row, column=left_col)
-        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text_local}"
-        note_cell.font = Font(size=12)
+
+        note_cell = ws.cell(row=top_row, column=left_col)
+        note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
+        note_cell.font = Font(size=14)
         note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        for rr in range(top_row, top_row + box_height):
-            ws_season.row_dimensions[rr].height = 22
+        for r in range(top_row, top_row + box_height):
+            ws.row_dimensions[r].height = 22
 
         thick = Side(style="thick", color="000000")
-        for rr in range(top_row, top_row + box_height):
-            for cc in range(left_col, right_col + 1):
-                cur = ws_season.cell(row=rr, column=cc).border
-                ws_season.cell(row=rr, column=cc).border = Border(
-                    left=thick if cc == left_col else cur.left,
-                    right=thick if cc == right_col else cur.right,
-                    top=thick if rr == top_row else cur.top,
-                    bottom=thick if rr == top_row + box_height - 1 else cur.bottom,
+        for r in range(top_row, top_row + box_height):
+            for c in range(left_col, right_col + 1):
+                cur = ws.cell(row=r, column=c).border
+                ws.cell(row=r, column=c).border = Border(
+                    left=thick if c == left_col else cur.left,
+                    right=thick if c == right_col else cur.right,
+                    top=thick if r == top_row else cur.top,
+                    bottom=thick if r == top_row + box_height - 1 else cur.bottom,
                 )
 
+excel_bytes = out.getvalue()
 
+col_dl1, col_dl2 = st.columns(2)
+with col_dl1:
+    st.download_button(
+        label="📊 Download Season Report (Excel)",
+        data=excel_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
-        # --- INDIVIDUAL PLAYER TABS ---
-        # Prefer current_roster; fallback to df_export Player column
-        try:
-            roster_source = list(current_roster) if current_roster else list(df_export["Player"].astype(str).tolist())
-        except Exception:
-            roster_source = list(df_export["Player"].astype(str).tolist()) if "Player" in df_export.columns else []
-
-        active_for_tabs = sorted({str(x).strip() for x in roster_source if str(x).strip()}, key=lambda x: x.lower())
-
-        for player_name in active_for_tabs:
-            pstats = season_players.get(player_name, empty_stat_dict())
-            base = _safe_sheet_name(player_name)
-            sheet = _unique_sheet_name(writer.book, base)
-            ws_player = writer.book.create_sheet(title=sheet)
-            _build_player_scout_sheet(ws_player, player_name, pstats)
-
-except Exception as e:
-    # Show the REAL exception so you’re not blind
-    st.error("Excel export crashed. Here is the real exception:")
-    st.exception(e)
-    excel_bytes = b""
-else:
-    out.seek(0)
-    excel_bytes = out.getvalue()
-
-# ==========================================================
-# DOWNLOAD BUTTONS
-# ==========================================================
-if not excel_bytes or len(excel_bytes) < 5000:
-    st.error("Excel export failed (file too small). The real error is shown above.")
-else:
-    gs_bytes = excel_bytes
-
-    with st.container():
-        col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1], gap="small")
-
-    with col_dl1:
-        st.download_button(
-            label="📊 Download Season Report (Excel - Formatted)",
-            data=excel_bytes,
-            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"dl_season_excel_{TEAM_CODE}_{_RP_RUN_NONCE}",
-            use_container_width=True,
-        )
-
-    with col_dl2:
-        st.download_button(
-            label="🟩 Download Season Report (Google Sheets – Formatted)",
-            data=gs_bytes,
-            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report_GoogleSheets.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"dl_season_gs_{TEAM_CODE}_{_RP_RUN_NONCE}",
-            use_container_width=True,
-        )
-        st.caption("To open: sheets.google.com → File → Import → Upload.")
-
-    with col_dl3:
-        st.download_button(
-            label="📄 Download Season Report (CSV – Raw Data)",
-            data=csv_bytes,
-            file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
-            mime="text/csv",
-            key=f"dl_season_csv_{TEAM_CODE}_{_RP_RUN_NONCE}",
-            use_container_width=True,
-        )
+with col_dl2:
+    st.download_button(
+        label="📄 Download Season Report (CSV - Google Sheets Ready)",
+        data=csv_bytes,
+        file_name=f"{TEAM_CODE}_{safe_team}_Season_Spray_Report.csv",
+        mime="text/csv",
+    )
 
 # -----------------------------
 # FOOTER (Copyright)
@@ -2753,6 +2651,64 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
