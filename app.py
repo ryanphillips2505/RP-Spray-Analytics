@@ -2369,7 +2369,6 @@ def _build_individual_spray_sheet(
     for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]:
         ws.column_dimensions[col].width = 10
 
-
     # -----------------------------
     # Header bar  ✅ value BEFORE merge
     # -----------------------------
@@ -2385,7 +2384,7 @@ def _build_individual_spray_sheet(
     )
     border_box(HEADER_TOP, COL_LEFT, HEADER_BOT, COL_RIGHT, thick_outer=True)
 
-            # -----------------------------
+    # -----------------------------
     # FINAL SPEC — Individual tab Excel adjustments
     # -----------------------------
 
@@ -2397,8 +2396,8 @@ def _build_individual_spray_sheet(
     for rr in [5, 9, 13, 15]:
         ws.row_dimensions[rr].height = 24
 
-    # ✅ Make sure Column K exists + put Result at K20
-    ws.column_dimensions["K"].width = 10
+    # ✅ Result MUST be in K20
+    ws.column_dimensions["K"].width = 12
     rcell = ws.cell(row=20, column=11, value="Result")  # K20
     rcell.font = Font(bold=True, size=10)
     rcell.alignment = Alignment(horizontal="center", vertical="center")
@@ -2425,7 +2424,6 @@ def _build_individual_spray_sheet(
         scell = ws.cell(row=bot, column=3, value="S")
         scell.font = Font(bold=True, size=10)
         scell.alignment = Alignment(horizontal="center", vertical="center")
-
 
     # -----------------------------
     # Percent heatmap bins (same as Season style)
@@ -2576,8 +2574,7 @@ def _build_individual_spray_sheet(
     # -----------------------------
     # Log grid
     # -----------------------------
-    ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1, value="Result").font = Font(bold=True, size=10)
-    ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1).alignment = center
+    # NOTE: Result header is handled above (K20). Do NOT write it again here.
 
     for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
         for c in range(LOG_LEFT, LOG_RIGHT + 1):
@@ -2588,7 +2585,7 @@ def _build_individual_spray_sheet(
 
     border_box(LOG_TOP, LOG_LEFT, LOG_TOP + LOG_ROWS - 1, LOG_RIGHT, thick_outer=True)
 
-    res_col = LOG_RIGHT + 1  # J
+    res_col = LOG_RIGHT + 1  # K (because LOG_RIGHT=J=10)
     ws.column_dimensions[get_column_letter(res_col)].width = 12
     for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
         cell = ws.cell(row=r, column=res_col)
@@ -3031,6 +3028,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
