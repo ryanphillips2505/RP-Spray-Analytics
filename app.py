@@ -2317,7 +2317,7 @@ def _build_individual_spray_sheet(
     # Layout constants (matches your screenshot grid style)
     # -----------------------------
     COL_LEFT = 2   # B
-    COL_RIGHT = 11  # k
+    COL_RIGHT = 10  # j
 
     # Header bar
     HEADER_TOP = 2
@@ -2337,7 +2337,6 @@ def _build_individual_spray_sheet(
     "1B": (12, 8),  # H-I
 }
 
-
     # BIP Total box
     BIP_ROW = 17
     BIP_COL = 2  # B
@@ -2345,7 +2344,7 @@ def _build_individual_spray_sheet(
     # Log table area
     LOG_TOP = 21
     LOG_LEFT = 2   # B
-    LOG_RIGHT = 11  # k
+    LOG_RIGHT = 10  # j
     LOG_ROWS = 20
 
     # -----------------------------
@@ -2414,7 +2413,6 @@ def _build_individual_spray_sheet(
         ccell = ws.cell(row=bot, column=3, value="S")
         ccell.font = Font(bold=True, size=10)
         ccell.alignment = Alignment(horizontal="center", vertical="center")
-
 
 
     # -----------------------------
@@ -3021,6 +3019,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
