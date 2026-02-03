@@ -2278,10 +2278,317 @@ out = BytesIO()
 # -----------------------------
 # SEASON REPORT (EXCEL) — PRINT-STYLE FORMATTING
 # -----------------------------
+def _safe_sheet_name(name: str, used: set[str]) -> str:
+    # Excel: max 31 chars, no : \ / ? * [ ]
+    base = re.sub(r'[:\\/*?\[\]]', '', str(name or "").strip())
+    if not base:
+        base = "Player"
+    base = base[:31]
+    nm = base
+    k = 2
+    while nm in used:
+        suffix = f"_{k}"
+        nm = (base[: 31 - len(suffix)] + suffix)[:31]
+        k += 1
+    used.add(nm)
+    return nm
+
+
+def _build_individual_spray_sheet(
+    wb,
+    sheet_name: str,
+    player_name: str,
+    stats: dict,
+    notes_text: str = "",
+):
+    """
+    Builds the EXACT style 'Individual Spray' tab:
+    - Header bar with player name
+    - Position boxes with GB/FB counts and % of total BIP
+    - BIP total box
+    - Event log grid + Notes box
+    - Heatmap on % cells
+    """
+
+    ws = wb.create_sheet(title=sheet_name)
+
+    # -----------------------------
+    # Layout constants (matches your screenshot grid style)
+    # -----------------------------
+    # Columns used: A through J
+    # We'll center the field template across B..I
+    # NOTE: if you want micro-shifts, change these anchors only.
+    COL_LEFT = 2   # B
+    COL_RIGHT = 9  # I
+
+    # Header bar
+    HEADER_TOP = 2
+    HEADER_BOT = 3
+
+    # Field template anchor (top-left-ish)
+    # Positions are built as little 2-col x 3-row boxes
+    # (title row, GB/FB row, % row)
+    # Each "box" is 2 columns wide.
+    pos_boxes = {
+        "LF": (4, 4),   # (row, col) = (4, D)
+        "CF": (4, 5),   # E
+        "RF": (4, 7),   # G
+        "SS": (8, 5),   # E
+        "2B": (8, 7),   # G
+        "3B": (12, 4),  # D
+        "P":  (14, 6),  # F
+        "1B": (12, 8),  # H
+    }
+
+    # BIP Total box
+    BIP_ROW = 17
+    BIP_COL = 2  # B
+
+    # Log table area
+    LOG_TOP = 21
+    LOG_LEFT = 2   # B
+    LOG_RIGHT = 9  # I
+    LOG_ROWS = 20  # room for entries
+
+    # Notes box
+    NOTES_TOP = LOG_TOP + LOG_ROWS + 3
+    NOTES_LEFT = 2
+    NOTES_RIGHT = 9
+    NOTES_HEIGHT = 6
+
+    # -----------------------------
+    # Styling
+    # -----------------------------
+    thin = Side(style="thin", color="000000")
+    thick = Side(style="thick", color="000000")
+
+    def border_box(r1, c1, r2, c2, thick_outer=True):
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                cell = ws.cell(row=r, column=c)
+                b = cell.border
+                cell.border = Border(
+                    left=(thick if thick_outer and c == c1 else thin),
+                    right=(thick if thick_outer and c == c2 else thin),
+                    top=(thick if thick_outer and r == r1 else thin),
+                    bottom=(thick if thick_outer and r == r2 else thin),
+                )
+
+    # Column widths (match your print-friendly grid)
+    ws.column_dimensions["A"].width = 2.5
+    for col in ["B","C","D","E","F","G","H","I","J"]:
+        ws.column_dimensions[col].width = 10
+
+    # Row heights
+    for r in range(1, NOTES_TOP + NOTES_HEIGHT + 3):
+        ws.row_dimensions[r].height = 18
+
+    # -----------------------------
+    # Header bar
+    # -----------------------------
+    ws.merge_cells(start_row=HEADER_TOP, start_column=COL_LEFT,
+                   end_row=HEADER_BOT, end_column=COL_RIGHT)
+    hc = ws.cell(row=HEADER_TOP, column=COL_LEFT, value=str(player_name))
+    hc.font = Font(bold=True, size=20)
+    hc.alignment = Alignment(horizontal="center", vertical="center")
+    hc.fill = PatternFill("solid", fgColor="D9D9D9")
+    border_box(HEADER_TOP, COL_LEFT, HEADER_BOT, COL_RIGHT, thick_outer=True)
+
+    # -----------------------------
+    # Percent heatmap function (same logic style as your season sheet)
+    # -----------------------------
+    pct_bins = [
+        (0.00, 0.05, None),
+        (0.05, 0.10, PatternFill("solid", fgColor="FFE5CC")),
+        (0.10, 0.15, PatternFill("solid", fgColor="FFDBB8")),
+        (0.15, 0.20, PatternFill("solid", fgColor="FFCC99")),
+        (0.20, 0.25, PatternFill("solid", fgColor="FFBE80")),
+        (0.25, 0.30, PatternFill("solid", fgColor="FFB266")),
+        (0.30, 0.35, PatternFill("solid", fgColor="FFA366")),
+        (0.35, 0.40, PatternFill("solid", fgColor="FF9933")),
+        (0.40, 0.45, PatternFill("solid", fgColor="F8A5A5")),
+        (0.45, 0.50, PatternFill("solid", fgColor="F28B82")),
+        (0.50, 0.55, PatternFill("solid", fgColor="F8696B")),
+        (0.55, 0.60, PatternFill("solid", fgColor="EF5350")),
+        (0.60, 0.65, PatternFill("solid", fgColor="E53935")),
+        (0.65, 0.70, PatternFill("solid", fgColor="D32F2F")),
+        (0.70, 0.75, PatternFill("solid", fgColor="C62828")),
+        (0.75, 0.80, PatternFill("solid", fgColor="B71C1C")),
+        (0.80, 0.85, PatternFill("solid", fgColor="A00000")),
+        (0.85, 0.90, PatternFill("solid", fgColor="8E0000")),
+        (0.90, 0.95, PatternFill("solid", fgColor="7F0000")),
+        (0.95, 1.00, PatternFill("solid", fgColor="6A0000")),
+    ]
+
+    def pct_fill(v):
+        try:
+            x = float(v)
+        except Exception:
+            return None
+        if x <= 0:
+            return None
+        if x < 0:
+            x = 0.0
+        if x > 1:
+            x = 1.0
+        for lo, hi, fill in pct_bins:
+            if fill is None:
+                continue
+            if (lo <= x < hi) or (hi == 1.0 and lo <= x <= hi):
+                return fill
+        return None
+
+    # -----------------------------
+    # Compute totals
+    # -----------------------------
+    gb_total = int(stats.get("GB", 0) or 0)
+    fb_total = int(stats.get("FB", 0) or 0)
+    bip_total = gb_total + fb_total
+    denom = bip_total if bip_total > 0 else 0
+
+    # -----------------------------
+    # Build each position box
+    # -----------------------------
+    title_font = Font(bold=True, size=10)
+    small_font = Font(bold=True, size=9)
+    val_font = Font(size=10)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for pos, (r0, c0) in pos_boxes.items():
+        # Box is 3 rows tall x 2 cols wide:
+        # r0: Position title (merged)
+        # r0+1: "GB" and "FB" labels (top) with counts
+        # r0+2: "%" row with % values
+        r1, c1 = r0, c0
+        r2, c2 = r0 + 2, c0 + 1
+
+        # Title row
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r1, end_column=c2)
+        tcell = ws.cell(row=r1, column=c1, value=pos)
+        tcell.font = title_font
+        tcell.alignment = center
+
+        # Counts row (GB / FB)
+        gb_k = f"GB-{pos}"
+        fb_k = f"FB-{pos}"
+        gb_ct = int(stats.get(gb_k, 0) or 0)
+        fb_ct = int(stats.get(fb_k, 0) or 0)
+
+        # left cell = GB count
+        ws.cell(row=r1 + 1, column=c1, value="GB").font = small_font
+        ws.cell(row=r1 + 1, column=c1).alignment = center
+        ws.cell(row=r1 + 1, column=c1).value = f"GB\n{gb_ct}"
+
+        # right cell = FB count
+        ws.cell(row=r1 + 1, column=c2, value="FB").font = small_font
+        ws.cell(row=r1 + 1, column=c2).alignment = center
+        ws.cell(row=r1 + 1, column=c2).value = f"FB\n{fb_ct}"
+
+        # % row (as % of TOTAL BIP)
+        gb_pct = (gb_ct / denom) if denom else 0.0
+        fb_pct = (fb_ct / denom) if denom else 0.0
+
+        left_pct_cell = ws.cell(row=r1 + 2, column=c1, value=gb_pct)
+        right_pct_cell = ws.cell(row=r1 + 2, column=c2, value=fb_pct)
+
+        left_pct_cell.number_format = "0%"
+        right_pct_cell.number_format = "0%"
+
+        left_pct_cell.font = val_font
+        right_pct_cell.font = val_font
+        left_pct_cell.alignment = center
+        right_pct_cell.alignment = center
+
+        # Apply heatmap fills
+        f1 = pct_fill(gb_pct)
+        f2 = pct_fill(fb_pct)
+        if f1: left_pct_cell.fill = f1
+        if f2: right_pct_cell.fill = f2
+
+        # Borders
+        border_box(r1, c1, r2, c2, thick_outer=True)
+
+    # -----------------------------
+    # BIP Total box
+    # -----------------------------
+    ws.merge_cells(start_row=BIP_ROW, start_column=BIP_COL,
+                   end_row=BIP_ROW, end_column=BIP_COL + 1)
+    lab = ws.cell(row=BIP_ROW, column=BIP_COL, value="BIP - Total")
+    lab.font = Font(bold=True, size=10)
+    lab.alignment = center
+
+    ws.merge_cells(start_row=BIP_ROW + 1, start_column=BIP_COL,
+                   end_row=BIP_ROW + 1, end_column=BIP_COL + 1)
+    val = ws.cell(row=BIP_ROW + 1, column=BIP_COL, value=int(bip_total))
+    val.font = Font(bold=True, size=12)
+    val.alignment = center
+
+    border_box(BIP_ROW, BIP_COL, BIP_ROW + 1, BIP_COL + 1, thick_outer=True)
+
+    # -----------------------------
+    # Black divider bar
+    # -----------------------------
+    ws.merge_cells(start_row=LOG_TOP - 1, start_column=LOG_LEFT,
+                   end_row=LOG_TOP - 1, end_column=LOG_RIGHT)
+    bar = ws.cell(row=LOG_TOP - 1, column=LOG_LEFT, value="")
+    bar.fill = PatternFill("solid", fgColor="000000")
+    border_box(LOG_TOP - 1, LOG_LEFT, LOG_TOP - 1, LOG_RIGHT, thick_outer=False)
+
+    # -----------------------------
+    # Log grid (like screenshot)
+    # -----------------------------
+    # Header row labels
+    ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1, value="Result").font = Font(bold=True, size=10)
+    ws.cell(row=LOG_TOP, column=LOG_RIGHT + 1).alignment = center
+
+    # Draw grid
+    for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
+        for c in range(LOG_LEFT, LOG_RIGHT + 1):
+            ws.cell(row=r, column=c).alignment = center
+            ws.cell(row=r, column=c).font = Font(size=10)
+            ws.cell(row=r, column=c).border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Outer border for the grid block
+    border_box(LOG_TOP, LOG_LEFT, LOG_TOP + LOG_ROWS - 1, LOG_RIGHT, thick_outer=True)
+
+    # Result column outline
+    res_col = LOG_RIGHT + 1  # J
+    for r in range(LOG_TOP, LOG_TOP + LOG_ROWS):
+        ws.cell(row=r, column=res_col).border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        ws.cell(row=r, column=res_col).alignment = center
+        ws.cell(row=r, column=res_col).font = Font(size=10)
+    border_box(LOG_TOP, res_col, LOG_TOP + LOG_ROWS - 1, res_col, thick_outer=True)
+
+
 out = BytesIO()
 
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     sheet_name = "Season"
+
+    # -------------------------------------------------
+    # INDIVIDUAL SPRAY CHART TABS (one tab per player)
+    # -------------------------------------------------
+    used_names = set([ws.title for ws in writer.book.worksheets])
+
+    # Build list of players to export (match what you show)
+    # Active + (optional) archived. This keeps it consistent.
+    export_players = display_players[:] if isinstance(display_players, list) else list(season_players.keys())
+    export_players = [p for p in export_players if p in season_players]
+
+    for p in export_players:
+        pstats = season_players.get(p, {}) or {}
+        tab_name = _safe_sheet_name(p, used_names)
+
+        # If you want per-player notes later, you already have db_get_player_notes()
+        # Right now we’ll leave it blank unless you wire it in.
+        _build_individual_spray_sheet(
+            writer.book,
+            tab_name,
+            player_name=p,
+            stats=pstats,
+            notes_text="",   # you can wire player notes here later if you want
+        )
+
 
     # Build export frame
     df_export = df_xl.copy() if df_xl is not None else pd.DataFrame()
@@ -2673,6 +2980,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
