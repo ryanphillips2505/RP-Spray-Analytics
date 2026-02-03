@@ -2317,7 +2317,7 @@ def _build_individual_spray_sheet(
     # Layout constants (matches your screenshot grid style)
     # -----------------------------
     COL_LEFT = 2   # B
-    COL_RIGHT = 10  # j
+    COL_RIGHT = 10  # J
 
     # Header bar
     HEADER_TOP = 2
@@ -2325,17 +2325,17 @@ def _build_individual_spray_sheet(
 
     # Position boxes (top-left anchored like screenshot)
     pos_boxes = {
-    "LF": (4, 4),   # D-E
-    "CF": (4, 6),   # F-G   ✅ moved so it doesn't overlap LF
-    "RF": (4, 8),   # H-I
+        "LF": (4, 4),   # D-E
+        "CF": (4, 6),   # F-G   ✅ moved so it doesn't overlap LF
+        "RF": (4, 8),   # H-I
 
-    "SS": (8, 5),   # E-F
-    "2B": (8, 7),   # G-H
+        "SS": (8, 5),   # E-F
+        "2B": (8, 7),   # G-H
 
-    "3B": (12, 4),  # D-E
-    "P":  (14, 6),  # F-G
-    "1B": (12, 8),  # H-I
-}
+        "3B": (12, 4),  # D-E
+        "P":  (14, 6),  # F-G
+        "1B": (12, 8),  # H-I
+    }
 
     # BIP Total box
     BIP_ROW = 17
@@ -2344,7 +2344,7 @@ def _build_individual_spray_sheet(
     # Log table area
     LOG_TOP = 21
     LOG_LEFT = 2   # B
-    LOG_RIGHT = 10  # j
+    LOG_RIGHT = 10  # J
     LOG_ROWS = 20
 
     # -----------------------------
@@ -2366,7 +2366,7 @@ def _build_individual_spray_sheet(
 
     # Column widths
     ws.column_dimensions["A"].width = 2.5
-    for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J"]:
+    for col in ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]:
         ws.column_dimensions[col].width = 10
 
     # -----------------------------
@@ -2384,7 +2384,7 @@ def _build_individual_spray_sheet(
     )
     border_box(HEADER_TOP, COL_LEFT, HEADER_BOT, COL_RIGHT, thick_outer=True)
 
-        # -----------------------------
+    # -----------------------------
     # FINAL SPEC — Individual tab Excel adjustments
     # -----------------------------
 
@@ -2396,17 +2396,23 @@ def _build_individual_spray_sheet(
     for rr in [5, 9, 13, 15]:
         ws.row_dimensions[rr].height = 24
 
-    # 3️⃣ Bottom log numbering ONLY 1–8 (merge column B row pairs)
-    merge_pairs = [(21, 22), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (33, 34), (35, 36), (37, 38), (39,40)]
+    # 1) "Result" label at K20
+    rcell = ws.cell(row=20, column=11, value="Result")  # K20
+    rcell.font = Font(bold=True, size=10)
+    rcell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # 3️⃣ (merge column K row pairs)
-    merge_pairs = [(21, 22), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (33, 34), (35, 36), (37, 38), (39,40)]
+    # 3️⃣ Bottom log numbering ONLY 1–8 (merge column B + ALSO merge column K for same rows)
+    merge_pairs = [(21, 22), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (33, 34), (35, 36)]
 
     for i, (top, bot) in enumerate(merge_pairs, start=1):
+        # Merge Column B (numbers)
         ws.merge_cells(start_row=top, start_column=2, end_row=bot, end_column=2)  # B
         ncell = ws.cell(row=top, column=2, value=i)
         ncell.font = Font(size=12)
         ncell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+        # Merge Column K (same row pairs)
+        ws.merge_cells(start_row=top, start_column=11, end_row=bot, end_column=11)  # K
 
         # 4️⃣ Column C labels: B on top row, S on bottom row
         bcell = ws.cell(row=top, column=3, value="B")
@@ -2416,6 +2422,7 @@ def _build_individual_spray_sheet(
         ccell = ws.cell(row=bot, column=3, value="S")
         ccell.font = Font(bold=True, size=10)
         ccell.alignment = Alignment(horizontal="center", vertical="center")
+
 
 
     # -----------------------------
@@ -3022,6 +3029,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
