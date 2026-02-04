@@ -1877,64 +1877,64 @@ if process_clicked:
 
 
            
-# (confidence labels kept for future debug; not displayed)
-_ = overall_confidence_score(loc_conf + bt_conf)
-_ = loc_reasons + bt_reasons
+                # (confidence labels kept for future debug; not displayed)
+                _ = overall_confidence_score(loc_conf + bt_conf)
+                _ = loc_reasons + bt_reasons
 
-# ---------------------------
-# Per-play stat accumulation
-# ---------------------------
-game_team[loc] += 1
-game_players[batter][loc] += 1
+                # ---------------------------
+                # Per-play stat accumulation
+                # ---------------------------
+                game_team[loc] += 1
+                game_players[batter][loc] += 1
 
-if ball_type in BALLTYPE_KEYS:
-    game_team[ball_type] += 1
-    game_players[batter][ball_type] += 1
+                if ball_type in BALLTYPE_KEYS:
+                    game_team[ball_type] += 1
+                    game_players[batter][ball_type] += 1
 
-if ball_type in ("GB", "FB") and loc in COMBO_LOCS:
-    combo_key = f"{ball_type}-{loc}"
-    game_team[combo_key] += 1
-    game_players[batter][combo_key] += 1
+                if ball_type in ("GB", "FB") and loc in COMBO_LOCS:
+                    combo_key = f"{ball_type}-{loc}"
+                    game_team[combo_key] += 1
+                    game_players[batter][combo_key] += 1
 
 
-# ==========================================================
-# STOP.
-# The per-play loop ENDS ABOVE THIS LINE.
-# Everything below MUST be DEDENTED so it's OUTSIDE the loop.
-# ==========================================================
+                # ==========================================================
+                # STOP.
+                # The per-play loop ENDS ABOVE THIS LINE.
+                # Everything below MUST be DEDENTED so it's OUTSIDE the loop.
+                # ==========================================================
 
-# Apply GP (games played) ONCE for this game (not per play)
-for _p in gp_in_game:
-    if _p in game_players:
-        game_players[_p][GP_KEY] = game_players[_p].get(GP_KEY, 0) + 1
+                # Apply GP (games played) ONCE for this game (not per play)
+                for _p in gp_in_game:
+                    if _p in game_players:
+                        game_players[_p][GP_KEY] = game_players[_p].get(GP_KEY, 0) + 1
 
-# Add game stats to in-memory season totals
-add_game_to_season(
-    season_team,
-    season_players,
-    game_team,
-    game_players,
-)
+                # Add game stats to in-memory season totals
+                add_game_to_season(
+                    season_team,
+                    season_players,
+                    game_team,
+                    game_players,
+                )
 
-# Save season totals (includes archived players)
-db_save_season_totals(
-    TEAM_CODE,
-    team_key,
-    season_team,
-    season_players,
-    len(processed_set),
-    archived_players,
-)
+                # Save season totals (includes archived players)
+                db_save_season_totals(
+                    TEAM_CODE,
+                    team_key,
+                    season_team,
+                    season_players,
+                    len(processed_set),
+                    archived_players,
+                )
 
-st.success("✅ Game processed and added to season totals (Supabase).")
+                st.success("✅ Game processed and added to season totals (Supabase).")
 
-# Force UI refresh so totals are NOT one game behind
-try:
-    st.cache_data.clear()
-except Exception:
-    pass
+                # Force UI refresh so totals are NOT one game behind
+                try:
+                    st.cache_data.clear()
+                except Exception:
+                    pass
 
-st.rerun()
+                st.rerun()
 
 
 
