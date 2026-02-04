@@ -2338,8 +2338,8 @@ def _build_individual_spray_sheet(
     ws = wb.create_sheet(title=sheet_name)
 
     if template_mode:
-    stats = {}
-    player_name = ""
+        stats = {}
+        player_name = ""
 
 
     # -----------------------------
@@ -3154,6 +3154,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
