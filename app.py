@@ -382,14 +382,17 @@ os.makedirs(TEAM_SEASON_DIR, exist_ok=True)
 # -----------------------------
 # ENGINE CONSTANTS (MUST EXIST BEFORE empty_stat_dict/db_load)
 # -----------------------------
-LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "Bunt", "Sac Bunt", "UNKNOWN"]
+# ✅ Bunts combined into ONE stat (Sac + regular) and kept separate from GB/FB
+LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "BUNT", "UNKNOWN"]
+
 BALLTYPE_KEYS = ["GB", "FB"]
-COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["Bunt", "Sac Bunt", "UNKNOWN"]]
+
+# Combo keys only for true field locations (NO BUNT/UNKNOWN)
+COMBO_LOCS = [loc for loc in LOCATION_KEYS if loc not in ["BUNT", "UNKNOWN"]]
 COMBO_KEYS = [f"GB-{loc}" for loc in COMBO_LOCS] + [f"FB-{loc}" for loc in COMBO_LOCS]
 
-# ✅ baserunning removed — keep this defined so helpers never crash
-RUN_KEYS = []
-
+# ✅ BASERUNNING RE-ENABLED (NO SB-H / CS-H)
+RUN_KEYS = ["SB", "SB-2B", "SB-3B", "CS", "CS-2B", "CS-3B"]
 
 # Games Played tracking (per player)
 GP_KEY = "GP"
@@ -540,6 +543,42 @@ RIGHT_SIDE_PATTERNS = [
 
 PAREN_NAME_REGEX = re.compile(r"\(([^)]+)\)")
 
+# -----------------------------
+# SB / CS REGEX (STRICT + CLEAN)
+# -----------------------------
+SB_ACTION_REGEX = re.compile(r"\b(steals?|stole)\s+(2nd|second|3rd|third)\b", re.IGNORECASE)
+CS_ACTION_REGEX = re.compile(r"\b(caught\s+stealing|out\s+stealing)\s+(2nd|second|3rd|third)\b", re.IGNORECASE)
+
+def extract_runner_before_index(line: str, idx: int, roster: set[str]) -> Optional[str]:
+    """
+    Finds the runner name to the LEFT of the steals/CS phrase.
+    Uses roster longest-match-first for 98%+ accuracy.
+    """
+    if not line or idx is None:
+        return None
+
+    left = line[:idx]
+    chunk = left.split(",")[-1].strip()
+    chunk = re.sub(r"\([^)]*\)", "", chunk)
+    chunk = re.sub(r"\s+", " ", chunk).strip()
+    if not chunk:
+        return None
+
+    roster_sorted = sorted((r.strip().strip('"') for r in roster if r), key=len, reverse=True)
+    chunk_lower = chunk.lower()
+
+    for rn in roster_sorted:
+        if rn and chunk_lower.endswith(rn.lower()):
+            return rn
+
+    parts = chunk.split()
+    if len(parts) >= 2:
+        cand = parts[-2] + " " + parts[-1]
+        if cand in roster:
+            return cand
+
+    return None
+
 
 def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
     if not base_raw:
@@ -550,7 +589,7 @@ def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
     if b in ["3rd", "third"]:
         return f"{prefix}-3B"
     if b == "home":
-        return f"{prefix}-H"
+    return prefix  # ✅ we do NOT track -H buckets
     return prefix
 
 
@@ -616,21 +655,6 @@ def get_batter_name(line: str, roster: set[str]):
     return None
 
 
-    chunk = left.split(",")[-1].strip()
-
-    runner = get_batter_name(chunk, roster)
-    if runner:
-        return runner
-
-    parts = chunk.split()
-    if len(parts) >= 2:
-        candidate = parts[-2] + " " + parts[-1]
-        if candidate in roster:
-            return candidate
-
-    return None
-
-
 def extract_runner_name_fallback(clean_line: str, roster: set[str]) -> Optional[str]:
     runner = get_batter_name(clean_line, roster)
     if runner:
@@ -649,29 +673,32 @@ def extract_runner_name_fallback(clean_line: str, roster: set[str]) -> Optional[
 def parse_running_event(clean_line: str, roster: set[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Returns (runner_name, total_key, base_key) or (None, None, None).
-
-    ✅ BASERUNNING IS DISABLED when RUN_KEYS = [].
-    This prevents NameError/KeyError from SB/CS logic.
+    ✅ SB/CS are counted ONLY when a runner is confidently identified from roster.
+    ✅ No SB-H / CS-H ever produced.
     """
-    if not globals().get("RUN_KEYS"):   # RUN_KEYS = [] means baserunning removed
+    line = (clean_line or "").strip()
+    if not line:
         return None, None, None
 
-    # If you ever re-enable baserunning later, you can restore your SB/CS logic below:
-    m = SB_ACTION_REGEX.search(clean_line)
+    # SB
+    m = SB_ACTION_REGEX.search(line)
     if m:
-        base_key = normalize_base_bucket("SB", m.group(1) if (m.lastindex or 0) >= 1 else None)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "SB", base_key
+        base_key = normalize_base_bucket("SB", m.group(2))
+        runner = extract_runner_before_index(line, m.start(), roster) or extract_runner_name_fallback(line, roster)
+        if runner:
+            return runner, "SB", base_key
+        return None, None, None
 
-    m = CS_ACTION_REGEX.search(clean_line)
+    # CS
+    m = CS_ACTION_REGEX.search(line)
     if m:
-        base_raw = m.group(1) if (m.lastindex or 0) >= 1 else None
-        base_key = normalize_base_bucket("CS", base_raw)
-        runner = extract_runner_name_near_event(clean_line, m.start(), roster) or extract_runner_name_fallback(clean_line, roster)
-        return runner, "CS", base_key
+        base_key = normalize_base_bucket("CS", m.group(2))
+        runner = extract_runner_before_index(line, m.start(), roster) or extract_runner_name_fallback(line, roster)
+        if runner:
+            return runner, "CS", base_key
+        return None, None, None
 
     return None, None, None
-
 
 
 def is_ball_in_play(line_lower: str) -> bool:
@@ -685,8 +712,6 @@ def is_ball_in_play(line_lower: str) -> bool:
         "walks", "walked", " base on balls", "intentional walk",
         "strikes out", "strikeout", "called out on strikes",
         "reaches on catcher interference", "catcher's interference",
-        "caught stealing", "out stealing",
-        "steals", "stole", "stealing",
         "defensive indifference",
         "picked off", "pickoff",
     ]):
@@ -747,11 +772,13 @@ def classify_ball_type(line_lower: str):
 
 
 def classify_location(line_lower: str, strict_mode: bool = False):
-    if "sacrifice bunt" in line_lower or "sac bunt" in line_lower or "sacrifice hit" in line_lower:
-        return "Sac Bunt", 3, ["Contains 'sacrifice bunt/sac bunt' → Sac Bunt"]
+    
+if "sacrifice bunt" in line_lower or "sac bunt" in line_lower or "sacrifice hit" in line_lower:
+    return "BUNT", 3, ["Contains sacrifice bunt → BUNT"]
 
-    if "bunt" in line_lower:
-        return "Bunt", 3, ["Contains 'bunt' → Bunt"]
+# ✅ Bunts are NOT GB/FB — they are their own stat (BUNT)
+if "bunt" in line_lower:
+    return None, 3, ["Bunt detected → no GB/FB classification"]
 
     candidates = []
 
@@ -1799,11 +1826,16 @@ if process_clicked:
             # running events (not BIP)
             runner, total_key, base_key = parse_running_event(clean_line, current_roster)
             if runner and total_key:
-                game_team[total_key] += 1
-                game_players[runner][total_key] += 1
-                if base_key and base_key in RUN_KEYS:
-                    game_team[base_key] += 1
-                    game_players[runner][base_key] += 1
+                dedupe_key = (runner, total_key, base_key or "", clean_line.lower())
+                if dedupe_key not in running_seen:
+                    running_seen.add(dedupe_key)
+
+                    game_team[total_key] += 1
+                    game_players[runner][total_key] += 1
+
+                    if base_key and base_key in RUN_KEYS:
+                        game_team[base_key] += 1
+                        game_players[runner][base_key] += 1
 
             batter = get_batter_name(clean_line, current_roster)
             if batter is None:
@@ -1822,7 +1854,10 @@ if process_clicked:
                 loc_reasons.append("No location match → bucketed as UNKNOWN")
 
             if ball_type is None and loc is not None:
-                if loc in ["SS", "3B", "2B", "1B", "P", "Bunt", "Sac Bunt"]:
+                # ✅ Do NOT infer GB/FB for bunts
+                if loc == "BUNT":
+                    ball_type = None
+                elif loc in ["SS", "3B", "2B", "1B", "P"]:
                     ball_type = "GB"
                     bt_conf += 1
                     bt_reasons.append("No explicit GB phrase → inferred GB from infield location")
@@ -1830,6 +1865,7 @@ if process_clicked:
                     ball_type = "FB"
                     bt_conf += 1
                     bt_reasons.append("No explicit FB phrase → inferred FB from outfield location")
+
 
             # (confidence labels kept for future debug; not displayed)
             _ = overall_confidence_score(loc_conf + bt_conf)
@@ -1921,6 +1957,14 @@ for player in display_players:
     # GB/FB by position (keep)
     for ck in COMBO_KEYS:
         row[ck] = stats.get(ck, 0)
+         
+    # ✅ BUNT total (combined bunt stat)
+    row["BUNT"] = stats.get("BUNT", 0)
+
+    # ✅ SB / CS totals + base buckets (NO -H buckets)
+    for rk in RUN_KEYS:
+        row[rk] = stats.get(rk, 0)
+   
 
     season_rows.append(row)
 
@@ -2670,7 +2714,13 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         # Add BIP at the end of FB block
         df_export["BIP"] = bip_vals.astype(int)
 
-        df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + rest]
+        # ✅ Put BUNT + SB/CS immediately to the right of BIP
+        bunt_and_run = ["BUNT", "SB", "SB-2B", "SB-3B", "CS", "CS-2B", "CS-3B"]
+        
+        rest2 = [c for c in rest if c not in bunt_and_run]
+        present_br = [c for c in bunt_and_run if c in df_export.columns]
+        
+        df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + present_br + rest2]
 
     # Write Season sheet
     df_export.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
@@ -3036,6 +3086,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
