@@ -2614,33 +2614,33 @@ def _build_individual_spray_sheet(
         cell.border = Border(left=thick, right=thick, top=thin, bottom=thick)
 
     # -----------------------------
-# Bunts total (Bunt + Sac Bunt combined) — Row 17-18, Col G
-# -----------------------------
-bun_total = (
-    int(stats.get("Bunts", 0) or 0)
-    + int(stats.get("BUNT", 0) or 0)
-    + int(stats.get("Bunt", 0) or 0)
-    + int(stats.get("Sac Bunt", 0) or 0)
-    + int(stats.get("BU", 0) or 0)
-    + int(stats.get("SH", 0) or 0)
-)
-
-# Label (G17)
-bun_lab = ws.cell(row=17, column=7, value="BUNTS")   # G17
-bun_lab.font = Font(bold=True, size=10)
-bun_lab.alignment = center
-bun_lab.fill = PatternFill("solid", fgColor="D9D9D9")
-bun_lab.border = Border(left=thick, right=thick, top=thick, bottom=thin)
-
-# Value (G18)
-bun_val = ws.cell(row=18, column=7, value=bun_total)  # G18
-bun_val.font = Font(bold=True, size=12)
-bun_val.alignment = center
-bun_val.border = Border(left=thick, right=thick, top=thin, bottom=thick)
-
-# ✅ If you previously used H17/H18 for SAC, clear them so nothing shows
-ws.cell(row=17, column=8, value="")
-ws.cell(row=18, column=8, value="")
+    # Bunts total (Bunt + Sac Bunt combined) — Row 17-18, Col G
+    # -----------------------------
+    bun_total = (
+        int(stats.get("Bunts", 0) or 0)
+        + int(stats.get("BUNT", 0) or 0)
+        + int(stats.get("Bunt", 0) or 0)
+        + int(stats.get("Sac Bunt", 0) or 0)
+        + int(stats.get("BU", 0) or 0)
+        + int(stats.get("SH", 0) or 0)
+    )
+    
+    # Label (G17)
+    bun_lab = ws.cell(row=17, column=7, value="BUNTS")   # G17
+    bun_lab.font = Font(bold=True, size=10)
+    bun_lab.alignment = center
+    bun_lab.fill = PatternFill("solid", fgColor="D9D9D9")
+    bun_lab.border = Border(left=thick, right=thick, top=thick, bottom=thin)
+    
+    # Value (G18)
+    bun_val = ws.cell(row=18, column=7, value=bun_total)  # G18
+    bun_val.font = Font(bold=True, size=12)
+    bun_val.alignment = center
+    bun_val.border = Border(left=thick, right=thick, top=thin, bottom=thick)
+    
+    # ✅ If you previously used H17/H18 for SAC, clear them so nothing shows
+    ws.cell(row=17, column=8, value="")
+    ws.cell(row=18, column=8, value="")
 
 
         
@@ -3141,6 +3141,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
