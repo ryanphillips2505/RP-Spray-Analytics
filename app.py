@@ -2626,14 +2626,14 @@ def _build_individual_spray_sheet(
     )
     
     # Label (K17)
-    bun_lab = ws.cell(row=17, column=7, value="BUNTS")   # K17
+    bun_lab = ws.cell(row=17, column=11, value="BUNTS")   # K17
     bun_lab.font = Font(bold=True, size=10)
     bun_lab.alignment = center
     bun_lab.fill = PatternFill("solid", fgColor="D9D9D9")
     bun_lab.border = Border(left=thick, right=thick, top=thick, bottom=thin)
     
     # Value (K18)
-    bun_val = ws.cell(row=18, column=7, value=bun_total)  # K18
+    bun_val = ws.cell(row=18, column=11, value=bun_total)  # K18
     bun_val.font = Font(bold=True, size=12)
     bun_val.alignment = center
     bun_val.border = Border(left=thick, right=thick, top=thin, bottom=thick)
@@ -3139,6 +3139,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
