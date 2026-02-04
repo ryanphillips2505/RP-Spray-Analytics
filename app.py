@@ -1800,7 +1800,7 @@ if process_clicked:
             if not clean_line:
                 continue
             line_lower = clean_line.lower()
-
+          
             # reset batter context at inning headers
             if line_lower.startswith("top ") or line_lower.startswith("bottom "):
                 current_batter_ctx = None
@@ -3133,6 +3133,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
