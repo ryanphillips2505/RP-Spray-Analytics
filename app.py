@@ -384,7 +384,7 @@ os.makedirs(TEAM_SEASON_DIR, exist_ok=True)
 # ENGINE CONSTANTS (MUST EXIST BEFORE empty_stat_dict/db_load)
 # -----------------------------
 # ✅ Bunts combined into ONE stat (Sac + regular) and kept separate from GB/FB
-LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P", "BUNT", "UNKNOWN"]
+LOCATION_KEYS = ["LF", "CF", "RF", "3B", "SS", "2B", "1B", "P"]
 
 BALLTYPE_KEYS = ["GB", "FB"]
 
@@ -1959,7 +1959,15 @@ for player in display_players:
     for ck in (COMBO_KEYS or []):
         row[ck] = stats.get(ck, 0)
 
-    row["BUNT"] = stats.get("BUNT", 0)
+    # ✅ ONE combined bunt stat (Bunt + Sac Bunt) + legacy fallbacks
+    row["Bunts"] = (
+        int(stats.get("Bunts", 0) or 0)
+        + int(stats.get("BUNT", 0) or 0)
+        + int(stats.get("Bunt", 0) or 0)
+        + int(stats.get("Sac Bunt", 0) or 0)
+        + int(stats.get("BU", 0) or 0)
+        + int(stats.get("SH", 0) or 0)
+    )
 
     for rk in (RUN_KEYS or []):
         row[rk] = stats.get(rk, 0)
@@ -1968,12 +1976,14 @@ for player in display_players:
 
 df_season = pd.DataFrame(season_rows)
 
-col_order = ["Player", "GB", "FB"] + list(COMBO_KEYS or []) + ["BUNT"] + list(RUN_KEYS or [])
+# ✅ Use "Bunts" (not "BUNT") in the visible season table + exports
+col_order = ["Player", "GB", "FB"] + list(COMBO_KEYS or []) + ["Bunts"] + list(RUN_KEYS or [])
 if df_season.empty:
     df_season = pd.DataFrame(columns=col_order)
 else:
     col_order = [c for c in col_order if c in df_season.columns]
     df_season = df_season[col_order]
+
 
 
 # -----------------------------
@@ -3124,6 +3134,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
