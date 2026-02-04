@@ -23,6 +23,7 @@ import httpx
 import time  # anti-stuck processing lock + failsafe unlock
 from datetime import datetime
 import uuid
+import traceback
 
 def _write_table_two_blocks(ws, start_row, cols, row_values, split_at=None, gap=2):
     """Write a header + rows into two side-by-side blocks for landscape printing.
@@ -926,15 +927,19 @@ create index if not exists processed_games_team_idx
 def _show_db_error(e: Exception, label: str):
     st.error(f"**{label}**")
     try:
-        parts = [f"type: {type(e)}"]
+        parts = [f"type: {type(e)}", f"error: {str(e)}"]
         for attr in ("message", "details", "hint", "code"):
             if hasattr(e, attr):
                 val = getattr(e, attr)
                 if val:
                     parts.append(f"{attr}: {val}")
         st.code("\n".join(parts), language="text")
+
+        # ✅ show full traceback so we get the exact line that caused it
+        st.code(traceback.format_exc(), language="text")
     except Exception:
         st.write(str(e))
+
 
 
 def _render_supabase_fix_block():
@@ -3134,6 +3139,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
