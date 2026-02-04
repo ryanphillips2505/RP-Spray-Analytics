@@ -1900,10 +1900,17 @@ if process_clicked:
         add_game_to_season(season_team, season_players, game_team, game_players)
 
         # ✅ Save with archived_players too
-        db_save_season_totals(TEAM_CODE, team_key, season_team, season_players, len(processed_set), archived_players)
+        1903 db_save_season_totals(TEAM_CODE, team_key, season_team, season_players, len(processed_set), archived_players)
 
-        st.success("✅ Game processed and added to season totals (Supabase).")
-        rerun_needed = True
+     # ✅ Force UI to refresh immediately (fixes 1-game lag)
+     try:
+         st.cache_data.clear()
+     except Exception:
+         pass
+
+     st.success("✅ Game processed and added to season totals (Supabase).")
+     st.rerun()
+
 
     except Exception as e:
         if marked_processed and gkey:
@@ -3135,6 +3142,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
