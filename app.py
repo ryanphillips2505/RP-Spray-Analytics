@@ -1703,7 +1703,6 @@ raw_text = st.text_area(
     height=260,
 )
 
-
 # -----------------------------
 # PROCESS GAME (SUPABASE DEDUPE + SUPABASE SAVE)
 # -----------------------------
@@ -1722,31 +1721,12 @@ if st.session_state.processing_game:
         st.session_state.processing_game = False
         st.session_state.processing_started_at = 0.0
 
-
-st.markdown(
-    """
-    <style>
-    div[data-testid="stButton"] button[data-key="process_game"] {
-        background-color: #16a34a !important;  /* bright green */
-        color: white !important;
-        border: 1px solid #16a34a !important;
-        font-weight: 700;
-    }
-    div[data-testid="stButton"] button[data-key="process_game"]:hover {
-        background-color: #15803d !important;
-        border-color: #15803d !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 st.markdown(
     """
     <style>
     /* Only the button inside this wrapper gets styled */
     #process-wrap button {
-        background: #00c853 !important;   /* bright green */
+        background: #00c853 !important;
         color: white !important;
         border: 0 !important;
         font-weight: 700 !important;
@@ -1767,7 +1747,6 @@ process_clicked = st.button("📥 Process Game (ADD to Season Totals)", key="pro
 st.markdown("</div>", unsafe_allow_html=True)
 
 if process_clicked:
-
     if st.session_state.processing_game:
         st.warning("Already processing… please wait.")
         st.stop()
@@ -1780,7 +1759,7 @@ if process_clicked:
     gkey = None
 
     try:
-        if not raw_text.strip():
+        if not (raw_text or "").strip():
             st.error("Paste play-by-play first.")
             st.stop()
 
@@ -1797,7 +1776,7 @@ if process_clicked:
         processed_set.add(gkey)
         marked_processed = True
 
-        lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+        lines = [ln.strip() for ln in (raw_text or "").split("\n") if ln.strip()]
 
         game_team = empty_stat_dict()
         game_players = {p: empty_stat_dict() for p in current_roster}
@@ -1827,7 +1806,7 @@ if process_clicked:
             # --- running events (NOT BIP) ---
             runner, total_key, base_key = parse_running_event(clean_line, current_roster)
             if runner and total_key:
-                dedupe_key = (runner, total_key, base_key or "", clean_line.lower())
+                dedupe_key = (runner, total_key, base_key or "", line_lower)
                 if dedupe_key not in running_seen:
                     running_seen.add(dedupe_key)
 
@@ -1891,21 +1870,12 @@ if process_clicked:
         # ---------------------------
         # OUTSIDE the per-play loop (still inside try)
         # ---------------------------
-
-        # Apply GP (games played) ONCE for this game
         for _p in gp_in_game:
             if _p in game_players:
                 game_players[_p][GP_KEY] = game_players[_p].get(GP_KEY, 0) + 1
 
-        # Add game stats to in-memory season totals
-        add_game_to_season(
-            season_team,
-            season_players,
-            game_team,
-            game_players,
-        )
+        add_game_to_season(season_team, season_players, game_team, game_players)
 
-        # Save season totals (includes archived players)
         db_save_season_totals(
             TEAM_CODE_SAFE,
             team_key,
@@ -1919,13 +1889,11 @@ if process_clicked:
         rerun_needed = True
 
     except Exception as e:
-        # Roll back dedupe mark if something failed
         if marked_processed and gkey:
             try:
                 processed_set.discard(gkey)
             except Exception:
                 pass
-
             try:
                 db_unmark_game_processed(TEAM_CODE_SAFE, team_key, gkey)
             except Exception:
@@ -1947,10 +1915,64 @@ if process_clicked:
 
 
 # -----------------------------
-# Stat Edit (column visibility) — per selected opponent/team
+# SEASON OUTPUTS
 # -----------------------------
+hdr_left, hdr_right = st.columns([8, 2], vertical_alignment="center")
+with hdr_left:
+    st.markdown(
+        f"<h3 style='margin:0; padding:0;'>📔 Full Team Spray – SEASON TO DATE ({selected_team})</h3>",
+        unsafe_allow_html=True,
+    )
+with hdr_right:
+    show_archived = st.checkbox("Show archived players", value=False)
 
-# Hide Streamlit dataframe download icon (you already have download buttons)
+# stat edit control placeholder (filled AFTER df_season exists)
+stat_edit_slot = st.empty()
+
+# -----------------------------
+# Build season table (df_season)
+# -----------------------------
+season_rows = []
+
+_roster_set = set(current_roster or [])
+_season_players = season_players or {}
+_archived_set = set(archived_players or set())
+
+active_players = sorted([p for p in _roster_set if p in _season_players])
+archived_list = sorted([p for p in _archived_set if p in _season_players and p not in _roster_set])
+
+display_players = active_players + archived_list if show_archived else active_players
+
+for player in display_players:
+    stats = _season_players.get(player, {}) or {}
+    row = {"Player": player}
+
+    row["GB"] = stats.get("GB", 0)
+    row["FB"] = stats.get("FB", 0)
+
+    for ck in (COMBO_KEYS or []):
+        row[ck] = stats.get(ck, 0)
+
+    row["BUNT"] = stats.get("BUNT", 0)
+
+    for rk in (RUN_KEYS or []):
+        row[rk] = stats.get(rk, 0)
+
+    season_rows.append(row)
+
+df_season = pd.DataFrame(season_rows)
+
+col_order = ["Player", "GB", "FB"] + list(COMBO_KEYS or []) + ["BUNT"] + list(RUN_KEYS or [])
+if df_season.empty:
+    df_season = pd.DataFrame(columns=col_order)
+else:
+    col_order = [c for c in col_order if c in df_season.columns]
+    df_season = df_season[col_order]
+
+
+# -----------------------------
+# Stat Edit (column visibility) — NOW SAFE (df_season exists)
+# -----------------------------
 st.markdown(
     """
     <style>
@@ -1963,7 +1985,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# UI polish for the Stat Edit control
 st.markdown(
     """
     <style>
@@ -1996,33 +2017,23 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# -----------------------------
-# Stat Edit (column visibility) — per selected opponent/team
-# -----------------------------
 cols_key = f"season_cols__{TEAM_CODE_SAFE}__{team_key}"
-
-# df_season MUST already exist before this point
 all_cols = list(df_season.columns)
 
-# Initialize once per opponent/team
 if cols_key not in st.session_state:
     st.session_state[cols_key] = all_cols.copy()
 
 default_cols = list(st.session_state.get(cols_key, []))
-
-# Keep only columns that still exist
 default_cols = [c for c in default_cols if c in all_cols]
 
-# Always keep Player visible
 if "Player" in all_cols and "Player" not in default_cols:
     default_cols = ["Player"] + default_cols
-    
+
 
 # -----------------------------
 # STAT FILTERS (Popover / Expander)
 # -----------------------------
 with stat_edit_slot.container():
-
     if hasattr(st, "popover"):
         with st.popover("⚙ Stat Filters"):
             st.caption("Toggle which stats show in the table")
@@ -2035,29 +2046,17 @@ with stat_edit_slot.container():
 
             c1, c2 = st.columns(2)
             with c1:
-                all_clicked = st.button(
-                    "All", key=f"{cols_key}__all", use_container_width=True
-                )
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                none_clicked = st.button(
-                    "None", key=f"{cols_key}__none", use_container_width=True
-                )
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
 
-            # Apply All / None
             if all_clicked or none_clicked:
                 for _col in all_cols:
                     _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
                     _k = f"{cols_key}__cb__{_safe}"
-                    if _col == "Player":
-                        st.session_state[_k] = True
-                    else:
-                        st.session_state[_k] = True if all_clicked else False
+                    st.session_state[_k] = True if (_col == "Player" or all_clicked) else False
 
-                st.session_state[cols_key] = (
-                    list(all_cols)
-                    if all_clicked
-                    else (["Player"] if "Player" in all_cols else [])
-                )
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
                 st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
@@ -2071,12 +2070,7 @@ with stat_edit_slot.container():
 
             with st.container(height=360):
                 if "Player" in view_cols:
-                    st.checkbox(
-                        "Player",
-                        value=True,
-                        disabled=True,
-                        key=f"{cols_key}__cb__Player",
-                    )
+                    st.checkbox("Player", value=True, disabled=True, key=f"{cols_key}__cb__Player")
                     view_cols = [c for c in view_cols if c != "Player"]
 
                 colA, colB, colC = st.columns(3)
@@ -2110,28 +2104,17 @@ with stat_edit_slot.container():
 
             c1, c2 = st.columns(2)
             with c1:
-                all_clicked = st.button(
-                    "All", key=f"{cols_key}__all", use_container_width=True
-                )
+                all_clicked = st.button("All", key=f"{cols_key}__all", use_container_width=True)
             with c2:
-                none_clicked = st.button(
-                    "None", key=f"{cols_key}__none", use_container_width=True
-                )
+                none_clicked = st.button("None", key=f"{cols_key}__none", use_container_width=True)
 
             if all_clicked or none_clicked:
                 for _col in all_cols:
                     _safe = re.sub(r"[^A-Za-z0-9_]+", "_", str(_col))
                     _k = f"{cols_key}__cb__{_safe}"
-                    if _col == "Player":
-                        st.session_state[_k] = True
-                    else:
-                        st.session_state[_k] = True if all_clicked else False
+                    st.session_state[_k] = True if (_col == "Player" or all_clicked) else False
 
-                st.session_state[cols_key] = (
-                    list(all_cols)
-                    if all_clicked
-                    else (["Player"] if "Player" in all_cols else [])
-                )
+                st.session_state[cols_key] = list(all_cols) if all_clicked else (["Player"] if "Player" in all_cols else [])
                 st.rerun()
 
             picked_set = set(st.session_state.get(cols_key, default_cols))
@@ -2145,12 +2128,7 @@ with stat_edit_slot.container():
 
             with st.container(height=360):
                 if "Player" in view_cols:
-                    st.checkbox(
-                        "Player",
-                        value=True,
-                        disabled=True,
-                        key=f"{cols_key}__cb__Player",
-                    )
+                    st.checkbox("Player", value=True, disabled=True, key=f"{cols_key}__cb__Player")
                     view_cols = [c for c in view_cols if c != "Player"]
 
                 colA, colB, colC = st.columns(3)
@@ -3106,6 +3084,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
