@@ -2614,6 +2614,30 @@ def _build_individual_spray_sheet(
     border_box(BIP_ROW, BIP_COL, BIP_ROW + 1, BIP_COL + 1, thick_outer=True)
 
     # -----------------------------
+    # SB / CS totals (Row 17-18, Col I-J)
+    # -----------------------------
+    sb_total = int(stats.get("SB", 0) or 0)
+    cs_total = int(stats.get("CS", 0) or 0)
+
+    # Labels
+    sb_lab = ws.cell(row=17, column=9, value="SB")   # I17
+    cs_lab = ws.cell(row=17, column=10, value="CS")  # J17
+    for cell in (sb_lab, cs_lab):
+        cell.font = Font(bold=True, size=10)
+        cell.alignment = center
+        cell.fill = PatternFill("solid", fgColor="D9D9D9")  # matches your gray style
+        cell.border = Border(left=thick, right=thick, top=thick, bottom=thin)
+
+    # Values
+    sb_val = ws.cell(row=18, column=9, value=sb_total)   # I18
+    cs_val = ws.cell(row=18, column=10, value=cs_total)  # J18
+    for cell in (sb_val, cs_val):
+        cell.font = Font(bold=True, size=12)
+        cell.alignment = center
+        cell.border = Border(left=thick, right=thick, top=thin, bottom=thick)
+
+
+    # -----------------------------
     # Black divider bar
     # -----------------------------
     bar = ws.cell(row=LOG_TOP - 1, column=LOG_LEFT)
@@ -3087,6 +3111,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
