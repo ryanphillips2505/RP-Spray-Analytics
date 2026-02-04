@@ -759,7 +759,6 @@ def classify_ball_type(line_lower: str):
     if "bunt" in line_lower:
         return None, 3, ["Bunt detected → no GB/FB"]
 
-
     for rx in SACFLY_REGEX:
         if rx.search(line_lower):
             return "FB", 3, ["Matched sac fly regex → FB"]
@@ -780,16 +779,17 @@ def classify_ball_type(line_lower: str):
 
 
 def classify_location(line_lower: str, strict_mode: bool = False):
-    
+
+    # ✅ Any bunt type: do NOT return a location (we count it separately as "Bunts")
     if "sacrifice bunt" in line_lower or "sac bunt" in line_lower or "sacrifice hit" in line_lower:
-        return "BUNT", 3, ["Contains sacrifice bunt → BUNT"]
-    
-    # ✅ Bunts are NOT GB/FB — they are their own stat (BUNT)
+        return None, 3, ["Sac bunt detected → Bunts stat only"]
+
+    # ✅ Any other bunt: also no location
     if "bunt" in line_lower:
-        return None, 3, ["Bunt detected → no GB/FB classification"]
+        return None, 3, ["Bunt detected → Bunts stat only"]
 
     candidates = []
-
+    
     def add_candidates(patterns, code, label):
         for kw in patterns:
             idx = line_lower.find(kw)
@@ -3124,6 +3124,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
