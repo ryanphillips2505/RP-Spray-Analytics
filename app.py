@@ -1803,9 +1803,7 @@ if process_clicked:
         game_players = {p: empty_stat_dict() for p in current_roster}
 
         gp_in_game = set()
-
-        running_seen = set()  # ✅ per-game dedupe for SB/CS events
-
+        running_seen = set()  # per-game dedupe for SB/CS events
 
         for line in lines:
             clean_line = line.strip().strip('"')
@@ -1814,25 +1812,19 @@ if process_clicked:
             line_lower = clean_line.lower()
 
             # --- GP tracking (Games Played) ---
-            # Count any time a rostered player is shown as participating in the game:
-            # - plate appearances ("X at bat")
-            # - lineup/defensive substitutions ("Lineup changed:", "Defensive", "in for")
-            # Exclude courtesy runner appearances (CR).
             if not ("courtesy runner" in line_lower or re.search(r"\bcr\b", line_lower)):
-                # plate appearance marker
                 if " at bat" in line_lower:
                     bn = get_batter_name(clean_line, current_roster)
                     if bn:
                         gp_in_game.add(bn)
 
-                # substitution / lineup change markers
                 if ("lineup changed" in line_lower) or ("defensive" in line_lower) or (" in for " in line_lower):
                     uline = (" " + clean_line.upper().replace(",", " ") + " ")
                     for p in current_roster:
                         if (" " + p.upper() + " ") in uline:
                             gp_in_game.add(p)
 
-            # running events (not BIP)
+            # --- running events (NOT BIP) ---
             runner, total_key, base_key = parse_running_event(clean_line, current_roster)
             if runner and total_key:
                 dedupe_key = (runner, total_key, base_key or "", clean_line.lower())
@@ -1849,7 +1841,9 @@ if process_clicked:
             batter = get_batter_name(clean_line, current_roster)
             if batter is None:
                 continue
+
             gp_in_game.add(batter)
+
             if not is_ball_in_play(line_lower):
                 continue
 
@@ -1863,7 +1857,7 @@ if process_clicked:
                 loc_reasons.append("No location match → bucketed as UNKNOWN")
 
             if ball_type is None and loc is not None:
-                # ✅ Do NOT infer GB/FB for bunts
+                # Do NOT infer GB/FB for bunts
                 if loc == "BUNT":
                     ball_type = None
                 elif loc in ["SS", "3B", "2B", "1B", "P"]:
@@ -1875,7 +1869,7 @@ if process_clicked:
                     bt_conf += 1
                     bt_reasons.append("No explicit FB phrase → inferred FB from outfield location")
 
-                                # (confidence labels kept for future debug; not displayed)
+            # (confidence labels kept for future debug; not displayed)
             _ = overall_confidence_score(loc_conf + bt_conf)
             _ = loc_reasons + bt_reasons
 
@@ -1898,7 +1892,7 @@ if process_clicked:
         # OUTSIDE the per-play loop (still inside try)
         # ---------------------------
 
-        # Apply GP (games played) ONCE for this game (not per play)
+        # Apply GP (games played) ONCE for this game
         for _p in gp_in_game:
             if _p in game_players:
                 game_players[_p][GP_KEY] = game_players[_p].get(GP_KEY, 0) + 1
@@ -1922,13 +1916,33 @@ if process_clicked:
         )
 
         st.success("✅ Game processed and added to season totals (Supabase).")
+        rerun_needed = True
 
-        # Force UI refresh so totals are NOT one game behind
+    except Exception as e:
+        # Roll back dedupe mark if something failed
+        if marked_processed and gkey:
+            try:
+                processed_set.discard(gkey)
+            except Exception:
+                pass
+
+            try:
+                db_unmark_game_processed(TEAM_CODE_SAFE, team_key, gkey)
+            except Exception:
+                pass
+
+        _show_db_error(e, "Processing failed (rolled back dedupe mark so you can retry)")
+        st.stop()
+
+    finally:
+        st.session_state.processing_game = False
+        st.session_state.processing_started_at = 0.0
+
+    if rerun_needed:
         try:
             st.cache_data.clear()
         except Exception:
             pass
-
         st.rerun()
 
 
@@ -3088,5 +3102,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
