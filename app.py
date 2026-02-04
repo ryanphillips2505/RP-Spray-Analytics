@@ -2874,20 +2874,22 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         _set_right_thick(gb_end)
     if fb_end:
         _set_right_thick(fb_end)
-     # ✅ Thick line after BIP to separate BIP from SB/CS
+    
+    # ✅ Thick line after BIP to separate BIP from SB/CS
     if bip_idx:
         _set_right_thick(bip_idx)
-     def _outline_box(r1: int, c1: int, r2: int, c2: int):
-        for r in range(r1, r2 + 1):
-            for c in range(c1, c2 + 1):
-                cell = ws.cell(row=r, column=c)
-                b = cell.border
-                cell.border = Border(
-                    left   = thick_side if c == c1 else b.left,
-                    right  = thick_side if c == c2 else b.right,
-                    top    = thick_side if r == r1 else b.top,
-                    bottom = thick_side if r == r2 else b.bottom,
-            )
+        
+        def _outline_box(r1: int, c1: int, r2: int, c2: int):
+            for r in range(r1, r2 + 1):
+                for c in range(c1, c2 + 1):
+                    cell = ws.cell(row=r, column=c)
+                    b = cell.border
+                    cell.border = Border(
+                        left   = thick_side if c == c1 else b.left,
+                        right  = thick_side if c == c2 else b.right,
+                        top    = thick_side if r == r1 else b.top,
+                        bottom = thick_side if r == r2 else b.bottom,
+                )
             def _first_idx(prefix: str):
                 for j, h in enumerate(headers, start=1):
                     if h.startswith(prefix):
@@ -3141,6 +3143,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
