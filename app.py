@@ -2705,7 +2705,9 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
                 return int((season_players.get(str(name), {}) or {}).get(GP_KEY, 0) or 0)
             except Exception:
                 return 0
-        df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
+        # avoid duplicate GP insert if rerun logic ever touches this again
+        if "GP" not in df_export.columns:
+            df_export.insert(1, "GP", df_export["Player"].apply(_gp_for))
 
     # --- Build BIP + GB%/FB% (based on total BIP = GB + FB) ---
     if not df_export.empty and ("GB" in df_export.columns) and ("FB" in df_export.columns):
@@ -2741,10 +2743,9 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 
         # ✅ Put BUNT + SB/CS immediately to the right of BIP
         bunt_and_run = ["BUNT", "SB", "SB-2B", "SB-3B", "CS", "CS-2B", "CS-3B"]
-        
-        rest2 = [c for c in rest if c not in bunt_and_run]
+        rest2 = [c for c in rest if c not in bunt_and_run and c != "BIP"]
         present_br = [c for c in bunt_and_run if c in df_export.columns]
-        
+
         df_export = df_export[fixed_lead + gb_pos + fb_pos + ["BIP"] + present_br + rest2]
 
     # Write Season sheet
@@ -2772,7 +2773,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws.row_dimensions[1].height = 35
     ws.row_dimensions[2].height = 35
     for r in range(3, ws.max_row + 1):
-        ws.row_dimensions[r].height = 45
+        ws.row_dimensions[r].height = 45  # ✅ Player rows height
 
     # Header styling (Row 2)
     header_font = Font(bold=True, size=12)
@@ -2848,63 +2849,56 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             for r in range(3, ws.max_row + 1):
                 ws[f"{L}{r}"].number_format = "0%"
 
-    # Thick borders helpers
+    # -----------------------------
+    # ✅ BORDERS (all INSIDE the with-block, so no indentation errors)
+    # -----------------------------
     thick_side = Side(style="thick", color="000000")
 
-def _outline_box(r1: int, c1: int, r2: int, c2: int):
-    for r in range(r1, r2 + 1):
-        for c in range(c1, c2 + 1):
-            cell = ws.cell(row=r, column=c)
+    def _outline_box(r1: int, c1: int, r2: int, c2: int):
+        for rr in range(r1, r2 + 1):
+            for cc in range(c1, c2 + 1):
+                cell = ws.cell(row=rr, column=cc)
+                b = cell.border
+                cell.border = Border(
+                    left=thick_side if cc == c1 else b.left,
+                    right=thick_side if cc == c2 else b.right,
+                    top=thick_side if rr == r1 else b.top,
+                    bottom=thick_side if rr == r2 else b.bottom,
+                )
+
+    def _first_idx(prefix: str):
+        for jj, hh in enumerate(headers, start=1):
+            if hh.startswith(prefix):
+                return jj
+        return None
+
+    def _last_idx(prefix: str):
+        last = None
+        for jj, hh in enumerate(headers, start=1):
+            if hh.startswith(prefix):
+                last = jj
+        return last
+
+    def _set_right_thick(col_idx: int):
+        for rr in range(2, ws.max_row + 1):  # include header row
+            cell = ws.cell(row=rr, column=col_idx)
             b = cell.border
-            cell.border = Border(
-                left=thick_side if c == c1 else b.left,
-                right=thick_side if c == c2 else b.right,
-                top=thick_side if r == r1 else b.top,
-                bottom=thick_side if r == r2 else b.bottom,
-            )
+            cell.border = Border(left=b.left, right=thick_side, top=b.top, bottom=b.bottom)
 
-def _first_idx(prefix: str):
-    for j, h in enumerate(headers, start=1):
-        if h.startswith(prefix):
-            return j
-    return None
+    gb_start = _first_idx("GB-")
+    gb_end = _last_idx("GB-")
+    fb_start = _first_idx("FB-")
+    fb_end = _last_idx("FB-")
 
-def _last_idx(prefix: str):
-    last = None
-    for j, h in enumerate(headers, start=1):
-        if h.startswith(prefix):
-            last = j
-    return last
+    # Thick line after BIP to separate BIP and SB/CS
+    if bip_idx:
+        _set_right_thick(bip_idx)
 
-def _set_right_thick(col_idx: int):
-    for r in range(2, ws.max_row + 1):
-        cell = ws.cell(row=r, column=col_idx)
-        b = cell.border
-        cell.border = Border(left=b.left, right=thick_side, top=b.top, bottom=b.bottom)
-
-gb_end = _last_idx("GB-")
-fb_end = _last_idx("FB-")
-
-if gb_end:
-    _set_right_thick(gb_end)
-if fb_end:
-    _set_right_thick(fb_end)
-
-# Thick line after BIP to separate BIP from SB/CS
-if bip_idx:
-    _set_right_thick(bip_idx)
-
-gb_start = _first_idx("GB-")
-fb_start = _first_idx("FB-")
-
-# Thick outline around GB and FB blocks (includes headings row 2)
-if gb_start and gb_end:
-    _outline_box(2, gb_start, ws.max_row, gb_end)
-
-if fb_start and fb_end:
-    _outline_box(2, fb_start, ws.max_row, fb_end)
-
-
+    # Thick outline around GB and FB blocks (including headings row 2)
+    if gb_start and gb_end:
+        _outline_box(2, gb_start, ws.max_row, gb_end)
+    if fb_start and fb_end:
+        _outline_box(2, fb_start, ws.max_row, fb_end)
 
     # -----------------------------
     # HEATMAPS
@@ -3024,14 +3018,12 @@ if fb_start and fb_end:
     for p in export_players:
         tab_name = _safe_sheet_name(p, used_names)
         _build_individual_spray_sheet(
-    writer.book,
-    tab_name,
-    p,
-    (season_players.get(p) or {}),
-    ""
-)
-
-
+            writer.book,
+            tab_name,
+            p,
+            (season_players.get(p) or {}),
+            ""
+        )
 
     # -----------------------------
     # COACH NOTES BOX (EXCEL)
@@ -3051,7 +3043,7 @@ if fb_start and fb_end:
 
         note_cell = ws.cell(row=top_row, column=left_col)
         note_cell.value = f"COACHES NOTES:\n\n{notes_box_text}"
-        note_cell.font = Font(size=12)  # size 12
+        note_cell.font = Font(size=12)
         note_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
         for rr in range(top_row, top_row + box_height):
@@ -3142,6 +3134,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
