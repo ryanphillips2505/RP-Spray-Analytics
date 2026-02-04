@@ -589,7 +589,8 @@ def normalize_base_bucket(prefix: str, base_raw: Optional[str]) -> str:
     if b in ["3rd", "third"]:
         return f"{prefix}-3B"
     if b == "home":
-    return prefix  # ✅ we do NOT track -H buckets
+        return prefix  # ✅ we do NOT track -H buckets
+        
     return prefix
 
 
@@ -3086,6 +3087,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
