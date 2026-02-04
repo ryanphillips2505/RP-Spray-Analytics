@@ -3023,6 +3023,19 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
             (season_players.get(p) or {}),
             ""
         )
+        # -------------------------------------------------
+        # ✅ BLANK INDIVIDUAL TEMPLATE (ALWAYS LAST)
+        # -------------------------------------------------
+        template_tab = _safe_sheet_name("NEW PLAYER TEMPLATE", used_names)
+        _build_individual_spray_sheet(
+            writer.book,
+            template_tab,
+            "",                 # no player name
+            {},                 # no stats
+            "",
+            template_mode=True
+        )   
+        
 
     # -----------------------------
     # COACH NOTES BOX (EXCEL)
@@ -3133,6 +3146,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
