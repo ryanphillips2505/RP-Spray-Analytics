@@ -2772,7 +2772,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
     ws.row_dimensions[1].height = 35
     ws.row_dimensions[2].height = 35
     for r in range(3, ws.max_row + 1):
-        ws.row_dimensions[r].height = 35
+        ws.row_dimensions[r].height = 45
 
     # Header styling (Row 2)
     header_font = Font(bold=True, size=12)
@@ -2874,6 +2874,36 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
         _set_right_thick(gb_end)
     if fb_end:
         _set_right_thick(fb_end)
+     # ✅ Thick line after BIP to separate BIP from SB/CS
+    if bip_idx:
+        _set_right_thick(bip_idx)
+     def _outline_box(r1: int, c1: int, r2: int, c2: int):
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                cell = ws.cell(row=r, column=c)
+                b = cell.border
+                cell.border = Border(
+                    left   = thick_side if c == c1 else b.left,
+                    right  = thick_side if c == c2 else b.right,
+                    top    = thick_side if r == r1 else b.top,
+                    bottom = thick_side if r == r2 else b.bottom,
+            )
+            def _first_idx(prefix: str):
+                for j, h in enumerate(headers, start=1):
+                    if h.startswith(prefix):
+                        return j
+                 return None
+
+            gb_start = _first_idx("GB-")
+            fb_start = _first_idx("FB-")
+     
+        # ✅ Thick outline around GB block and FB block (includes headings row 2)
+        if gb_start and gb_end:
+            _outline_box(2, gb_start, ws.max_row, gb_end)
+        
+        if fb_start and fb_end:
+            _outline_box(2, fb_start, ws.max_row, fb_end)
+
 
     # -----------------------------
     # HEATMAPS
@@ -3111,6 +3141,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
