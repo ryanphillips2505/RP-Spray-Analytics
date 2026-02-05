@@ -1,4 +1,4 @@
-f# RP Spray Analytics
+# RP Spray Analytics
 # Copyright © 2026 Ryan Phillips
 # All rights reserved.
 # Unauthorized copying, distribution, or resale prohibited.
@@ -3396,6 +3396,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
