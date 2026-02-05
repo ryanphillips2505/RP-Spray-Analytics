@@ -236,7 +236,7 @@ def require_team_access():
     code_raw = st.text_input(
         "Access Code",
         type="password",
-        placeholder="Enter access code (ex: YUKON)",
+        placeholder="Enter access code",
         key="access_code_input",
     )
 
@@ -3447,6 +3447,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
