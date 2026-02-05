@@ -1419,6 +1419,10 @@ st.markdown("---")
 # SIDEBAR
 # -----------------------------
 
+import hashlib
+import secrets
+from datetime import datetime
+
 # -----------------------------
 # HALL OF FAME QUOTES (SIDEBAR)
 # -----------------------------
@@ -1440,6 +1444,38 @@ def get_daily_quote(quotes):
     return quotes[idx]
 
 
+# -----------------------------
+# ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
+# -----------------------------
+def hash_access_code(raw_code: str) -> str:
+    salt = st.secrets.get("ACCESS_CODE_SALT", "")
+    code = (raw_code or "").strip()
+    if not salt:
+        raise ValueError("Missing ACCESS_CODE_SALT in Streamlit secrets.")
+    if not code:
+        raise ValueError("Blank access code not allowed.")
+    return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
+
+
+def admin_set_access_code(team_slug: str, new_code: str) -> bool:
+    team_slug = (team_slug or "").strip()
+    if not team_slug:
+        return False
+
+    new_hash = hash_access_code(new_code)
+
+    res = (
+        supabase.table("team_access")
+        .update({"code_hash": new_hash})
+        .eq("team_slug", team_slug)
+        .execute()
+    )
+    return bool(getattr(res, "data", None))
+
+
+# -----------------------------
+# SIDEBAR UI
+# -----------------------------
 with st.sidebar:
     # Logo
     if LOGO_PATH and os.path.exists(LOGO_PATH):
@@ -1449,11 +1485,11 @@ with st.sidebar:
     st.markdown("### ⚾ Spray Lab")
     st.markdown(
         """
-<span class="badge">Unlimited Teams</span>
-<span class="badge">GameChanger</span>
-<span class="badge">First Contact</span>
-<span class="badge">GB / FB</span>
-""",
+        <span class="badge">Unlimited Teams</span>
+        <span class="badge">GameChanger</span>
+        <span class="badge">First Contact</span>
+        <span class="badge">GB / FB</span>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -1461,6 +1497,7 @@ with st.sidebar:
     strict_mode = st.checkbox(
         "STRICT MODE (only count plays with explicit fielder/location)",
         value=bool(SETTINGS.get("strict_mode_default", True)),
+        key="strict_mode",
     )
 
     st.markdown("---")
@@ -1492,55 +1529,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    import hashlib
-import secrets
-
-# -----------------------------
-# ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
-# -----------------------------
-def hash_access_code(raw_code: str) -> str:
-    """
-    Hash the access code using a server-side salt.
-    MUST match everywhere you create/update/verify codes.
-    """
-    salt = st.secrets.get("ACCESS_CODE_SALT", "")
-    code = (raw_code or "").strip()
-    if not salt:
-        raise ValueError("Missing ACCESS_CODE_SALT in Streamlit secrets.")
-    if not code:
-        raise ValueError("Blank access code not allowed.")
-    return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
-
-
-def admin_set_access_code(team_slug: str, new_code: str) -> bool:
-    """
-    Updates team_access.code_hash for the given team_slug.
-    Returns True if a row was updated.
-    """
-    team_slug = (team_slug or "").strip()
-    if not team_slug:
-        return False
-
-    new_hash = hash_access_code(new_code)
-
-    # Update the correct column: code_hash (matches your INSERT below)
-    res = (
-        supabase.table("team_access")
-        .update({"code_hash": new_hash})
-        .eq("team_slug", team_slug)
-        .execute()
-    )
-
-    # supabase-py returns .data list for updated rows
-    return bool(getattr(res, "data", None))
-
-
-# -----------------------------
-# ADMIN: CHANGE ACCESS CODE + CREATE SCHOOL (TRULY HIDDEN BEHIND PIN)
-# -----------------------------
-with st.sidebar:
+    # -----------------------------
+    # ADMIN (TRULY HIDDEN BEHIND PIN)
+    # -----------------------------
     with st.expander("🔐 Admin", expanded=False):
-
         pin = st.text_input(
             "Admin PIN",
             type="password",
@@ -1575,11 +1567,9 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
 
-            # -----------------------------
-            # CHANGE ACCESS CODE (use team_slug internally, display team_code/name)
-            # -----------------------------
+            # Load teams
             try:
-                codes_map = load_team_codes()  # your cached loader
+                codes_map = load_team_codes()
             except Exception:
                 codes_map = {}
 
@@ -1594,7 +1584,6 @@ with st.sidebar:
                     if slug and code:
                         label = f"{code} — {name}" if name else code
                         teams.append((slug, label))
-
             teams = sorted(teams, key=lambda x: x[1])
 
             if not teams:
@@ -1607,27 +1596,14 @@ with st.sidebar:
                     key="admin_team_pick",
                 )
 
-                new_code = st.text_input(
-                    "New Code",
-                    type="password",
-                    placeholder="New access code",
-                    key="admin_new_code",
-                )
-                confirm = st.text_input(
-                    "Confirm",
-                    type="password",
-                    placeholder="Confirm new access code",
-                    key="admin_confirm",
-                )
+                new_code = st.text_input("New Code", type="password", key="admin_new_code")
+                confirm = st.text_input("Confirm", type="password", key="admin_confirm")
 
                 c1, c2 = st.columns(2)
-                with c1:
-                    update_btn = st.button("Update", use_container_width=True, key="admin_update_btn")
-                with c2:
-                    clear_btn = st.button("Clear", use_container_width=True, key="admin_clear_btn")
+                update_btn = c1.button("Update", use_container_width=True, key="admin_update_btn")
+                clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
 
                 if clear_btn:
-                    # wipe inputs
                     st.session_state["admin_new_code"] = ""
                     st.session_state["admin_confirm"] = ""
                     st.rerun()
@@ -1650,31 +1626,20 @@ with st.sidebar:
                             st.error(f"Update failed: {e}")
 
             # -----------------------------
-            # CREATE NEW SCHOOL (ONLY VISIBLE WHEN ADMIN)
+            # CREATE NEW SCHOOL
             # -----------------------------
             st.markdown("### ➕ Add New School")
-
             with st.expander("Create School", expanded=False):
                 colA, colB = st.columns(2)
-
                 with colA:
                     new_team_name = st.text_input("School Name", key="new_team_name")
                     new_team_code = st.text_input("Team Code (ex: ROCK, YUKON)", key="new_team_code")
-
                 with colB:
                     new_team_slug = st.text_input("Team Slug (unique)", key="new_team_slug")
                     new_active = st.checkbox("Active", value=True, key="new_team_active")
 
-                new_logo = st.file_uploader(
-                    "Team Logo",
-                    type=["png", "jpg", "jpeg", "webp"],
-                    key="new_logo",
-                )
-                new_bg = st.file_uploader(
-                    "Background Image",
-                    type=["png", "jpg", "jpeg", "webp"],
-                    key="new_bg",
-                )
+                new_logo = st.file_uploader("Team Logo", type=["png","jpg","jpeg","webp"], key="new_logo")
+                new_bg   = st.file_uploader("Background Image", type=["png","jpg","jpeg","webp"], key="new_bg")
 
                 if st.button("🚀 Create School", key="create_school_btn"):
                     if not (new_team_name or "").strip() or not (new_team_code or "").strip():
@@ -1683,22 +1648,19 @@ with st.sidebar:
                         team_slug = (new_team_slug or new_team_name.lower().replace(" ", "_")).strip()
                         team_code = new_team_code.upper().strip()
 
-                        # Check for duplicate slug
                         exists = supabase.table("team_access").select("id").eq("team_slug", team_slug).limit(1).execute()
                         if getattr(exists, "data", None):
                             st.error("That team slug already exists.")
                         else:
-                            # Upload assets to Supabase Storage
                             bucket = "team-assets"
                             try:
                                 supabase.storage.create_bucket(bucket, public=True)
                             except Exception:
-                                pass  # bucket already exists or not permitted
+                                pass
 
                             logo_url = None
                             bg_url = None
 
-                            # NOTE: some supabase-py versions want file_options={"content-type":..., "upsert": True}
                             if new_logo:
                                 path = f"{team_slug}/logo.png"
                                 supabase.storage.from_(bucket).upload(
@@ -1717,11 +1679,9 @@ with st.sidebar:
                                 )
                                 bg_url = supabase.storage.from_(bucket).get_public_url(path)
 
-                            # Generate access key (raw) + store hash
                             raw_key = secrets.token_hex(3).upper()
                             key_hash = hash_access_code(raw_key)
 
-                            # Insert into Supabase
                             supabase.table("team_access").insert({
                                 "team_slug": team_slug,
                                 "team_code": team_code,
@@ -3325,6 +3285,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
