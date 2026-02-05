@@ -81,29 +81,24 @@ def hash_access_code(code: str) -> str:
     pepper = st.secrets["ACCESS_CODE_PEPPER"]
     raw = (code.strip() + pepper).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
-def admin_set_access_code(team_lookup: str, new_plain_code: str) -> bool:
-    team_lookup = (team_lookup or "").strip().upper()
-    new_plain_code = (new_plain_code or "").strip().upper()  # <-- FIXED
-
-    if not team_lookup or not new_plain_code:
+def admin_set_access_code(team_slug: str, team_code: str, new_code: str) -> bool:
+    team_slug = (team_slug or "").strip()
+    team_code = (team_code or "").strip().upper()
+    if not team_slug and not team_code:
         return False
 
-    new_hash = hash_access_code(new_plain_code).strip().lower()
+    new_hash = hash_access_code(new_code)
 
-    # Try by team_code first
-    res = supabase.table("team_access").update(
-        {"code_hash": new_hash, "is_active": True}
-    ).eq("team_code", team_lookup).execute()
+    q = supabase.table("team_access").update({"code_hash": new_hash})
 
-    if res.data:
-        return True
+    # Update by whichever identifier exists (and both if both exist)
+    if team_slug:
+        q = q.eq("team_slug", team_slug)
+    if team_code:
+        q = q.eq("team_code", team_code)
 
-    # Fallback by team_slug
-    res2 = supabase.table("team_access").update(
-        {"code_hash": new_hash, "is_active": True}
-    ).eq("team_slug", team_lookup).execute()
-
-    return bool(res2.data)
+    res = q.execute()
+    return bool(getattr(res, "data", None))
 
 
 # -----------------------------
@@ -1568,62 +1563,76 @@ with st.sidebar:
             )
 
             # Load teams
+try:
+    codes_map = load_team_codes()
+except Exception:
+    codes_map = {}
+
+teams = []
+if isinstance(codes_map, dict):
+    for v in codes_map.values():
+        if not v:
+            continue
+        slug = (v.get("team_slug") or "").strip()
+        code = (v.get("team_code") or "").strip().upper()
+        name = (v.get("team_name") or "").strip()
+        if slug and code:
+            label = f"{code} — {name}" if name else code
+            teams.append({
+                "team_slug": slug,
+                "team_code": code,
+                "label": label,
+            })
+
+teams = sorted(teams, key=lambda x: x["label"])
+
+if not teams:
+    st.error("No active teams found in team_access.")
+else:
+    pick_label = st.selectbox(
+        "Team",
+        options=[t["label"] for t in teams],
+        key="admin_team_pick_label",
+    )
+
+    pick = next(t for t in teams if t["label"] == pick_label)
+    team_slug_pick = pick["team_slug"]
+    team_code_pick = pick["team_code"]
+
+    new_code = st.text_input("New Code", type="password", key="admin_new_code")
+    confirm = st.text_input("Confirm", type="password", key="admin_confirm")
+
+    c1, c2 = st.columns(2)
+    update_btn = c1.button("Update", use_container_width=True, key="admin_update_btn")
+    clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
+
+    if clear_btn:
+        st.session_state["admin_new_code"] = ""
+        st.session_state["admin_confirm"] = ""
+        st.rerun()
+
+    if update_btn:
+        if not (new_code or "").strip():
+            st.error("Enter a new code.")
+        elif new_code != confirm:
+            st.error("Codes don’t match.")
+        else:
             try:
-                codes_map = load_team_codes()
-            except Exception:
-                codes_map = {}
+                ok = admin_set_access_code(team_slug_pick, team_code_pick, new_code)
+                if ok:
+                    st.success("✅ Access code updated.")
+                    load_team_codes.clear()
 
-            teams = []
-            if isinstance(codes_map, dict):
-                for v in codes_map.values():
-                    if not v:
-                        continue
-                    slug = (v.get("team_slug") or "").strip()
-                    code = (v.get("team_code") or "").strip().upper()
-                    name = (v.get("team_name") or "").strip()
-                    if slug and code:
-                        label = f"{code} — {name}" if name else code
-                        teams.append((slug, label))
-            teams = sorted(teams, key=lambda x: x[1])
+                    # wipe any cached unlock state
+                    for k in ["access_granted", "unlocked", "unlock_ok"]:
+                        st.session_state.pop(k, None)
 
-            if not teams:
-                st.error("No active teams found in team_access.")
-            else:
-                team_slug_pick = st.selectbox(
-                    "Team",
-                    options=[t[0] for t in teams],
-                    format_func=lambda slug: dict(teams).get(slug, slug),
-                    key="admin_team_pick",
-                )
-
-                new_code = st.text_input("New Code", type="password", key="admin_new_code")
-                confirm = st.text_input("Confirm", type="password", key="admin_confirm")
-
-                c1, c2 = st.columns(2)
-                update_btn = c1.button("Update", use_container_width=True, key="admin_update_btn")
-                clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
-
-                if clear_btn:
-                    st.session_state["admin_new_code"] = ""
-                    st.session_state["admin_confirm"] = ""
                     st.rerun()
+                else:
+                    st.error("Update failed. Team not found in team_access.")
+            except Exception as e:
+                st.error(f"Update failed: {e}")
 
-                if update_btn:
-                    if not (new_code or "").strip():
-                        st.error("Enter a new code.")
-                    elif new_code != confirm:
-                        st.error("Codes don’t match.")
-                    else:
-                        try:
-                            ok = admin_set_access_code(team_slug_pick, new_code)
-                            if ok:
-                                st.success("✅ Access code updated.")
-                                load_team_codes.clear()
-                                st.rerun()
-                            else:
-                                st.error("Update failed. Team not found in team_access.")
-                        except Exception as e:
-                            st.error(f"Update failed: {e}")
 
             # -----------------------------
             # CREATE NEW SCHOOL
@@ -3285,6 +3294,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
