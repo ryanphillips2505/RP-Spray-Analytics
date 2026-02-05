@@ -236,9 +236,10 @@ def require_team_access():
     code_raw = st.text_input(
         "Access Code",
         type="password",
-        placeholder="Enter access code",
+        placeholder="Enter Access Code",
         key="access_code_input",
-    )
+)
+
 
     # ---------------------------------
     # NORMAL UNLOCK
@@ -3447,6 +3448,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
