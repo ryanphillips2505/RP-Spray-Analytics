@@ -257,9 +257,6 @@ if st.button("Unlock"):
         else:
             st.error("Invalid access code")
 
-st.stop()
-return None, None
-
 
 
 
@@ -3360,6 +3357,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
