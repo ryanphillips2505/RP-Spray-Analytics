@@ -240,7 +240,7 @@ def require_team_access():
         key="access_code_input",
     )
 
-    # =========================================================
+        # =========================================================
     # 🔐 ADMIN RESET (ACCESS PAGE — NO LOGIN REQUIRED)
     # =========================================================
     with st.expander("🔐 Admin Reset", expanded=False):
@@ -276,6 +276,7 @@ def require_team_access():
 
                 st.success(f"✅ Reset {updated} teams. Access code = TEAM CODE (ex: YUKON).")
                 st.rerun()
+
 
     # =========================================================
     # 🔓 NORMAL UNLOCK
@@ -3483,6 +3484,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
