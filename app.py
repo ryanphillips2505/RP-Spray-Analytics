@@ -1829,7 +1829,7 @@ with st.sidebar:
                             st.code(f"Access Key: {raw_key}")
                             load_team_codes.clear()
                             st.rerun()
-rerun()
+st.rerun()
 
 
 
@@ -3420,6 +3420,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
