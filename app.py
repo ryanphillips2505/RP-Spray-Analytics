@@ -238,9 +238,6 @@ def require_team_access():
         key="access_code_input",
     )
 
-    # ---------------------------------
-    # NORMAL UNLOCK FLOW
-    # ---------------------------------
     if st.button("Unlock", key="unlock_btn"):
         entered = (code_raw or "").strip()
 
@@ -250,7 +247,7 @@ def require_team_access():
 
         entered_hash = hash_access_code(entered)
 
-        # 🔹 Direct DB read (no cache)
+        # Direct DB read (authoritative)
         res = (
             supabase.table("team_access")
             .select("team_code, code_hash")
@@ -260,7 +257,8 @@ def require_team_access():
         rows = res.data or []
         matched = None
         for r in rows:
-            if entered_hash == str((r or {}).get("code_hash", "")).strip():
+            stored = str((r or {}).get("code_hash", "")).strip()
+            if stored and entered_hash == stored:
                 matched = r
                 break
 
@@ -277,35 +275,7 @@ def require_team_access():
         st.session_state.team_code = team_code
         st.rerun()
 
-    # ---------------------------------
-    # 🚨 EMERGENCY ADMIN RECOVERY (TEMP)
-    # ---------------------------------
-    with st.expander("🔐 Emergency Admin (TEMP)", expanded=False):
-        pin = st.text_input("Admin PIN", type="password", key="emergency_admin_pin")
-
-        if pin == st.secrets.get("ADMIN_PIN", ""):
-            st.success("Admin verified.")
-
-            if st.button("🔄 RESET ALL TEAM CODES = TEAM CODE", key="emergency_reset_all"):
-                res = supabase.table("team_access").select("id, team_code").execute()
-                rows = res.data or []
-
-                updated = 0
-                for r in rows:
-                    rid = r.get("id")
-                    code = (r.get("team_code") or "").strip().upper()
-                    if rid and code:
-                        supabase.table("team_access").update(
-                            {"code_hash": hash_access_code(code)}
-                        ).eq("id", rid).execute()
-                        updated += 1
-
-                load_team_codes.clear()
-                st.success(f"Reset {updated} teams. Use TEAM CODE to unlock (ex: YUKON).")
-                st.rerun()
-
     st.stop()
-
 
 
 TEAM_CODE, _ = require_team_access()
@@ -3465,6 +3435,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
