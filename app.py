@@ -222,6 +222,9 @@ def license_is_active(team_code: str) -> bool:
 
 
 def require_team_access():
+    # ---------------------------------
+    # Already unlocked?
+    # ---------------------------------
     team_code = str(st.session_state.get("team_code", "") or "").strip().upper()
     if team_code:
         return team_code, {"team_code": team_code}
@@ -231,13 +234,13 @@ def require_team_access():
     code_raw = st.text_input(
         "Access Code",
         type="password",
-        placeholder="Enter access code",
+        placeholder="Enter access code (ex: YUKON)",
         key="access_code_input",
     )
 
-    # -----------------------------
-    # ACCESS CODE UNLOCK (DB DIRECT – DEBUG SAFE)
-    # -----------------------------
+    # ---------------------------------
+    # NORMAL UNLOCK FLOW
+    # ---------------------------------
     if st.button("Unlock", key="unlock_btn"):
         entered = (code_raw or "").strip()
 
@@ -247,67 +250,62 @@ def require_team_access():
 
         entered_hash = hash_access_code(entered)
 
+        # 🔹 Direct DB read (no cache)
         res = (
             supabase.table("team_access")
-            .select("id, team_code, code_hash")
-            .eq("team_code", "YUKON")  # TEMP
-            .limit(1)
+            .select("team_code, code_hash")
             .execute()
         )
 
         rows = res.data or []
-        if not rows:
-            st.error("YUKON not found.")
-            st.stop()
+        matched = None
+        for r in rows:
+            if entered_hash == str((r or {}).get("code_hash", "")).strip():
+                matched = r
+                break
 
-        stored_hash = str(rows[0].get("code_hash") or "").strip()
-
-        st.write("Entered hash:", entered_hash)
-        st.write("Stored hash:", stored_hash)
-
-        if entered_hash != stored_hash:
+        if not matched:
             st.error("Invalid access code")
             st.stop()
 
-        st.session_state.team_code = "YUKON"
+        team_code = str(matched.get("team_code", "") or "").strip().upper()
+
+        if not license_is_active(team_code):
+            st.error("License inactive. Contact admin.")
+            st.stop()
+
+        st.session_state.team_code = team_code
         st.rerun()
 
-    st.stop()
+    # ---------------------------------
+    # 🚨 EMERGENCY ADMIN RECOVERY (TEMP)
+    # ---------------------------------
+    with st.expander("🔐 Emergency Admin (TEMP)", expanded=False):
+        pin = st.text_input("Admin PIN", type="password", key="emergency_admin_pin")
 
+        if pin == st.secrets.get("ADMIN_PIN", ""):
+            st.success("Admin verified.")
 
-    if st.button("Unlock", key="unlock_btn"):
-        entered = (code_raw or "").strip()
-        if not entered:
-            st.error("Enter an access code")
-        else:
-            try:
-                entered_hash = hash_access_code(entered)
-            except Exception as e:
-                st.error(str(e))
-                st.stop()
+            if st.button("🔄 RESET ALL TEAM CODES = TEAM CODE", key="emergency_reset_all"):
+                res = supabase.table("team_access").select("id, team_code").execute()
+                rows = res.data or []
 
-            matched = None
-            for row in (codes or {}).values():
-                if str(row.get("id")) == "3":  # TEMP: Yukon sanity check
-                    stored = str(row.get("code_hash", "") or "").strip()
-                    if entered_hash == stored:
-                        matched = row
-                        break
+                updated = 0
+                for r in rows:
+                    rid = r.get("id")
+                    code = (r.get("team_code") or "").strip().upper()
+                    if rid and code:
+                        supabase.table("team_access").update(
+                            {"code_hash": hash_access_code(code)}
+                        ).eq("id", rid).execute()
+                        updated += 1
 
-
-            if not matched:
-                st.error("Invalid access code")
-            else:
-                team_code = str(matched.get("team_code", "") or "").strip().upper()
-
-                if not license_is_active(team_code):
-                    st.error("License inactive. Contact admin.")
-                    st.stop()
-
-                st.session_state.team_code = team_code
+                load_team_codes.clear()
+                st.success(f"Reset {updated} teams. Use TEAM CODE to unlock (ex: YUKON).")
                 st.rerun()
 
     st.stop()
+
 
 
 TEAM_CODE, _ = require_team_access()
@@ -3467,6 +3465,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
