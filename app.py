@@ -1692,7 +1692,7 @@ with st.sidebar:
     )
 
     # -----------------------------
-    # ADMIN AT BOTTOM OF SIDEBAR
+    # ADMIN SIDEBAR
     # -----------------------------
     st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
     st.markdown("---")
@@ -1729,7 +1729,26 @@ with st.sidebar:
                 """,
                 unsafe_allow_html=True,
             )
-
+        
+            # ✅ ONE-TIME RESET (run once after changing ACCESS_CODE_SALT)
+            if st.button("🔄 ONE-TIME RESET: Codes = TEAM CODE", key="one_time_reset_codes"):
+                res = supabase.table("team_access").select("id, team_code").execute()
+                rows = res.data or []
+        
+                updated = 0
+                for r in rows:
+                    rid = r.get("id")
+                    code = (r.get("team_code") or "").strip().upper()
+                    if rid and code:
+                        supabase.table("team_access").update(
+                            {"code_hash": hash_access_code(code)}
+                        ).eq("id", rid).execute()
+                        updated += 1
+        
+                load_team_codes.clear()
+                st.success(f"Reset {updated} teams. Access code = TEAM CODE (ex: YUKON).")
+                st.rerun()
+        
             # Load teams DIRECT from Supabase so Admin is never stuck on cache
             res = (
                 supabase.table("team_access")
@@ -1738,7 +1757,7 @@ with st.sidebar:
                 .execute()
             )
             rows = res.data or []
-
+        
             teams = []
             for r in rows:
                 rid = r.get("id")
@@ -1747,9 +1766,9 @@ with st.sidebar:
                 if rid and code:
                     label = f"{code} — {name}" if name else code
                     teams.append({"id": rid, "label": label})
-
+        
             teams = sorted(teams, key=lambda x: x["label"])
-
+        
             if not teams:
                 st.error("No active teams found in team_access.")
             else:
@@ -1759,19 +1778,19 @@ with st.sidebar:
                     format_func=lambda x: x["label"],
                     key="admin_team_pick",
                 )
-
+        
                 new_code = st.text_input("New Code", type="password", key="admin_new_code")
                 confirm = st.text_input("Confirm", type="password", key="admin_confirm")
-
+        
                 c1, c2 = st.columns(2)
                 update_btn = c1.button("💾 Update", use_container_width=True, key="admin_update_btn")
                 clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
-
+        
                 if clear_btn:
                     st.session_state["admin_new_code"] = ""
                     st.session_state["admin_confirm"] = ""
                     st.rerun()
-
+        
                 if update_btn:
                     if not (new_code or "").strip():
                         st.error("Enter a new code.")
@@ -1779,29 +1798,15 @@ with st.sidebar:
                         st.error("Codes don’t match.")
                     else:
                         ok = admin_set_access_code_by_id(pick["id"], new_code)
-                
                         if ok:
-                            # ✅ STEP 1 DEBUG: prove Supabase updated the right row
-                            st.write("Picked team:", pick)
-                
-                            check = (
-                                supabase.table("team_access")
-                                .select("id, team_code, team_name, code_hash")
-                                .eq("id", pick["id"])
-                                .limit(1)
-                                .execute()
-                            )
-                            st.write("DB after update:", check.data)
-                
                             st.success("✅ Access code updated.")
-                            load_team_codes.clear()  # refresh gate cache
+                            load_team_codes.clear()
                             st.rerun()
                         else:
                             st.error("Update failed.")
-
-
+        
             st.markdown("### ➕ Add New School")
-
+        
             with st.expander("Create School", expanded=False):
                 colA, colB = st.columns(2)
                 with colA:
@@ -1810,17 +1815,17 @@ with st.sidebar:
                 with colB:
                     new_team_slug = st.text_input("Team Slug (unique)", key="new_team_slug")
                     new_active = st.checkbox("Active", value=True, key="new_team_active")
-
+        
                 new_logo = st.file_uploader("Team Logo", type=["png","jpg","jpeg","webp"], key="new_logo")
                 new_bg   = st.file_uploader("Background Image", type=["png","jpg","jpeg","webp"], key="new_bg")
-
+        
                 if st.button("🚀 Create School", key="create_school_btn"):
                     if not (new_team_name or "").strip() or not (new_team_code or "").strip():
                         st.error("School name and team code are required.")
                     else:
                         team_slug = (new_team_slug or new_team_name.lower().replace(" ", "_")).strip()
                         team_code = new_team_code.upper().strip()
-
+        
                         exists = (
                             supabase.table("team_access")
                             .select("id")
@@ -1836,10 +1841,10 @@ with st.sidebar:
                                 supabase.storage.create_bucket(bucket, public=True)
                             except Exception:
                                 pass
-
+        
                             logo_url = None
                             bg_url = None
-
+        
                             if new_logo:
                                 path = f"{team_slug}/logo.png"
                                 supabase.storage.from_(bucket).upload(
@@ -1848,7 +1853,7 @@ with st.sidebar:
                                     file_options={"content-type": new_logo.type, "upsert": True},
                                 )
                                 logo_url = supabase.storage.from_(bucket).get_public_url(path)
-
+        
                             if new_bg:
                                 path = f"{team_slug}/background.png"
                                 supabase.storage.from_(bucket).upload(
@@ -1857,10 +1862,10 @@ with st.sidebar:
                                     file_options={"content-type": new_bg.type, "upsert": True},
                                 )
                                 bg_url = supabase.storage.from_(bucket).get_public_url(path)
-
+        
                             raw_key = secrets.token_hex(3).upper()
                             key_hash = hash_access_code(raw_key)
-
+        
                             supabase.table("team_access").insert({
                                 "team_slug": team_slug,
                                 "team_code": team_code,
@@ -1870,11 +1875,12 @@ with st.sidebar:
                                 "logo_url": logo_url,
                                 "background_url": bg_url,
                             }).execute()
-
+        
                             st.success("School created!")
                             st.code(f"Access Key: {raw_key}")
                             load_team_codes.clear()
                             st.rerun()
+
    
 # -----------------------------
 # TEAM SELECTION (SUPABASE - PERSISTENT)
@@ -3461,6 +3467,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
