@@ -1,4 +1,4 @@
-# RP Spray Analytics
+f# RP Spray Analytics
 # Copyright © 2026 Ryan Phillips
 # All rights reserved.
 # Unauthorized copying, distribution, or resale prohibited.
@@ -154,56 +154,64 @@ st.set_page_config(
 )
 
 # ============================
-# ACCESS CODE GATE
+# ACCESS CODE GATE (CLEAN + STABLE)
 # ============================
 
+from datetime import datetime, timezone
 
 @st.cache_data(show_spinner=False)
 def load_team_codes() -> dict:
+    """
+    Loads active teams from Supabase.
+    Returns a dict keyed by team_code (UPPER), value = row dict.
+    NOTE: We intentionally do NOT key by slug to avoid collisions / confusion.
+    """
     try:
         res = (
             supabase.table("team_access")
-            .select("team_slug, team_code, team_name, code_hash, is_active")
+            .select("id, team_slug, team_code, team_name, code_hash, is_active")
             .eq("is_active", True)
             .execute()
         )
         rows = res.data or []
         out = {}
         for r in rows:
-            if r.get("team_code"):
-                out[str(r["team_code"]).strip().upper()] = r
-            if r.get("team_slug"):
-                out[str(r["team_slug"]).strip().upper()] = r
+            code = str(r.get("team_code") or "").strip().upper()
+            if code:
+                out[code] = r
         return out
     except Exception:
         return {}
+
+
 def license_is_active(team_code: str) -> bool:
     """
-    Returns True if this team has an active license (and not expired, if expires_at is set).
+    Returns True if team has active license (and not expired if expires_at set).
     Table: licenses (team_code text, status text, expires_at timestamptz)
     """
     try:
+        tc = str(team_code or "").strip().upper()
+        if not tc:
+            return False
+
         res = (
             supabase.table("licenses")
             .select("status, expires_at")
-            .eq("team_code", str(team_code).strip().upper())
+            .eq("team_code", tc)
             .limit(1)
             .execute()
         )
         rows = res.data or []
         if not rows:
-            return False  # no row = not licensed
+            return False
 
-        row = rows[0]
+        row = rows[0] or {}
         status = str(row.get("status", "")).strip().lower()
         if status != "active":
             return False
 
-        # Optional: expiration
         exp = row.get("expires_at")
         if exp:
-            from datetime import datetime, timezone
-            # Supabase returns ISO string typically
             exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
             if exp_dt < datetime.now(timezone.utc):
                 return False
@@ -211,9 +219,15 @@ def license_is_active(team_code: str) -> bool:
         return True
     except Exception:
         return False
-        
+
 
 def require_team_access():
+    """
+    Access code gate.
+    - Unlocks by matching hashed code against team_access.code_hash
+    - Enforces license active
+    - Stores st.session_state.team_code
+    """
     # already unlocked?
     team_code = str(st.session_state.get("team_code", "") or "").strip().upper()
     if team_code:
@@ -224,106 +238,52 @@ def require_team_access():
     code_raw = st.text_input(
         "Access Code",
         type="password",
-        placeholder="Enter access code (ex: YUKON)",
+        placeholder="Enter access code",
         key="access_code_input",
     )
 
-    # load all teams/codes
-    try:
-        codes = load_team_codes() or {}
-    except Exception:
-        codes = {}
+    # Load team rows (fresh enough; cached but cleared on admin updates)
+    codes = load_team_codes() or {}
 
     if st.button("Unlock", key="unlock_btn"):
         entered = (code_raw or "").strip()
         if not entered:
             st.error("Enter an access code")
         else:
-            entered_hash = hash_access_code(entered)
+            try:
+                entered_hash = hash_access_code(entered)
+            except Exception as e:
+                st.error(str(e))
+                st.stop()
 
-            matched_row = None
+            matched = None
             for row in (codes or {}).values():
-                stored_hash = str((row or {}).get("code_hash", "") or "").strip()
-                if stored_hash and entered_hash == stored_hash:
-                    matched_row = row
+                stored = str((row or {}).get("code_hash", "") or "").strip()
+                if stored and entered_hash == stored:
+                    matched = row
                     break
 
-            if matched_row:
-                team_code = str(matched_row.get("team_code", "") or "").strip().upper()
+            if not matched:
+                st.error("Invalid access code")
+            else:
+                team_code = str(matched.get("team_code", "") or "").strip().upper()
 
                 if not license_is_active(team_code):
                     st.error("License inactive. Contact admin.")
                     st.stop()
 
                 st.session_state.team_code = team_code
-                st.success("Unlocked")
                 st.rerun()
-            else:
-                st.error("Invalid access code")
-
-    # -----------------------------
-    # ADMIN RECOVERY (ON UNLOCK SCREEN)
-    # -----------------------------
-    with st.expander("🔐 Admin Recovery", expanded=False):
-        admin_pin = st.text_input("Admin PIN", type="password", key="admin_recovery_pin")
-
-        if admin_pin and admin_pin == st.secrets.get("ADMIN_PIN", ""):
-            st.success("Admin verified.")
-
-            # RESET ALL TEAMS (CODE = TEAM CODE)
-            if st.button("🔄 RESET ALL TEAMS (CODE = TEAM CODE)", key="reset_all_codes_btn"):
-                res = supabase.table("team_access").select("id,team_code").execute()
-                rows = res.data or []
-
-                updated = 0
-                for r in rows:
-                    rid = r.get("id")
-                    code = (r.get("team_code") or "").strip().upper()
-                    if rid and code:
-                        supabase.table("team_access").update(
-                            {"code_hash": hash_access_code(code)}
-                        ).eq("id", rid).execute()
-                        updated += 1
-
-                load_team_codes.clear()
-                st.success(f"Reset {updated} teams. Access code = TEAM CODE (ex: YUKON).")
-                st.rerun()
-
-            st.markdown("---")
-
-            # SET ONLY YUKON CODE
-            st.markdown("### 🔧 Set YUKON Code (only)")
-            new_yukon = st.text_input("New YUKON Access Code", type="password", key="new_yukon_code")
-            confirm_yukon = st.text_input("Confirm YUKON Code", type="password", key="confirm_yukon_code")
-
-            if st.button("🔧 Set YUKON Code Now", key="set_yukon_code_btn"):
-                if not (new_yukon or "").strip():
-                    st.error("Enter a new Yukon code.")
-                elif new_yukon != confirm_yukon:
-                    st.error("Codes don’t match.")
-                else:
-                    yukon_hash = hash_access_code(new_yukon)
-
-                    res = supabase.table("team_access").select("id").eq("team_code", "YUKON").limit(1).execute()
-                    rows = res.data or []
-                    if not rows:
-                        st.error("Could not find YUKON in team_access.")
-                    else:
-                        rid = rows[0].get("id")
-                        supabase.table("team_access").update({"code_hash": yukon_hash}).eq("id", rid).execute()
-
-                        load_team_codes.clear()
-                        st.success("YUKON code updated. Unlock using the new code.")
-                        st.rerun()
 
     st.stop()
 
 
-
-
 TEAM_CODE, _ = require_team_access()
 
-# Load full team config (logo/background/data_folder) from TEAM_CONFIG/team_settings.json
+
+# -----------------------------
+# TEAM CFG LOADER (FILE)
+# -----------------------------
 def _load_team_cfg_from_file(team_code: str) -> dict:
     try:
         with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
@@ -332,7 +292,6 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
         teams = data.get("teams", {}) or {}
         branding = data.get("team_branding", {}) or {}
 
-        # Find the team entry whose team_code matches TEAM_CODE
         cfg = None
         for _, t in teams.items():
             if str(t.get("team_code", "")).strip().upper() == str(team_code).strip().upper():
@@ -341,7 +300,6 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
 
         cfg = cfg or {}
 
-        # Apply branding override (your new source of truth)
         b = branding.get(str(team_code).strip().upper(), {}) or {}
         if b.get("logo_path"):
             cfg["logo_path"] = b["logo_path"]
@@ -351,6 +309,7 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
         return cfg
     except Exception:
         return {}
+
 
 TEAM_CFG = _load_team_cfg_from_file(TEAM_CODE) or {}
 
@@ -3437,6 +3396,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
