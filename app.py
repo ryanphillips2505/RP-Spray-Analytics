@@ -1924,7 +1924,7 @@ with st.expander("🔐 Admin", expanded=False):
         with st.expander("Create School", expanded=False):
             colA, colB = st.columns(2)
             with colA:
-                new_team_name = st.text_input("School Name", key="new_team_name")
+                new_team_name = st.text_input("School Name", key="new_team_name_admin")
                 new_team_code = st.text_input("Team Code (ex: ROCK, YUKON)", key="new_team_code")
             with colB:
                 new_team_slug = st.text_input("Team Slug (unique)", key="new_team_slug")
