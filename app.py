@@ -25,6 +25,7 @@ from datetime import datetime
 import uuid
 import traceback
 
+
 def _write_table_two_blocks(ws, start_row, cols, row_values, split_at=None, gap=2):
     """Write a header + rows into two side-by-side blocks for landscape printing.
     - cols: list of column names
@@ -72,10 +73,16 @@ from openpyxl.formatting.rule import ColorScaleRule, FormulaRule, CellIsRule
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from supabase import create_client, Client
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+@st.cache_resource(show_spinner=False)
+def supa_public() -> Client:
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+
+@st.cache_resource(show_spinner=False)
+def supa_admin() -> Client:
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_ROLE_KEY"])
+
+supabase: Client = supa_public()
 
 def hash_access_code(code: str) -> str:
     pepper = st.secrets["ACCESS_CODE_PEPPER"]
@@ -91,7 +98,8 @@ def admin_set_access_code(team_slug: str, team_code: str, new_code: str) -> bool
 
     new_hash = hash_access_code(new_code)
 
-    q = supabase.table("team_access").update({"code_hash": new_hash})
+    admin = supa_admin()
+    q = admin.table("team_access").update({"code_hash": new_hash})
 
     # Update by whichever identifier exists (and both if both exist)
     if team_slug:
@@ -1510,7 +1518,7 @@ def get_daily_quote(quotes):
 # -----------------------------
 # ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
 # -----------------------------
-def hash_access_code(raw_code: str) -> str:
+def hash_access_code__OLD_DO_NOT_USE(raw_code: str) -> str:
     salt = st.secrets.get("ACCESS_CODE_SALT", "")
     code = (raw_code or "").strip()
     if not salt:
@@ -1566,7 +1574,7 @@ def get_daily_quote(quotes):
 # -----------------------------
 # ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
 # -----------------------------
-def hash_access_code(raw_code: str) -> str:
+def hash_access_code__OLD_DO_NOT_USE_2(raw_code: str) -> str:
     salt = st.secrets.get("ACCESS_CODE_SALT", "")
     code = (raw_code or "").strip()
     if not salt:
@@ -1627,7 +1635,7 @@ def get_daily_quote(quotes):
 # -----------------------------
 # ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
 # -----------------------------
-def hash_access_code(raw_code: str) -> str:
+def hash_access_code__OLD_DO_NOT_USE_2(raw_code: str) -> str:
     salt = st.secrets.get("ACCESS_CODE_SALT", "")
     code = (raw_code or "").strip()
     if not salt:
@@ -1649,104 +1657,51 @@ def admin_set_access_code_by_id(row_id: int, new_code: str) -> bool:
 
 
 # -----------------------------
-# SIDEBAR UI
+# ADMIN SIDEBAR (BOTTOM)
 # -----------------------------
-with st.sidebar:
-    # Logo
-    if LOGO_PATH and os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=260)
+st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+st.markdown("---")
 
-    # Tags
-    st.markdown("### ⚾ Spray Lab")
-    st.markdown(
-        """
-        <span class="badge">Unlimited Teams</span>
-        <span class="badge">GameChanger</span>
-        <span class="badge">First Contact</span>
-        <span class="badge">GB / FB</span>
-        """,
-        unsafe_allow_html=True,
+with st.expander("🔐 Admin", expanded=False):
+    pin = st.text_input(
+        "Admin PIN",
+        type="password",
+        label_visibility="collapsed",
+        placeholder="Admin PIN",
+        key="admin_pin_input",
     )
 
-    # Strict mode
-    strict_mode = st.checkbox(
-        "STRICT MODE (only count plays with explicit fielder/location)",
-        value=bool(SETTINGS.get("strict_mode_default", True)),
-        key="strict_mode",
-    )
+    if pin != st.secrets.get("ADMIN_PIN", ""):
+        st.caption("Admin access only.")
+    else:
+        # Always use service-role inside Admin
+        admin = supa_admin()
 
-    st.markdown("---")
-
-    # Daily quote card
-    who, quote = get_daily_quote(HOF_QUOTES)
-    st.markdown(
-        f"""
-        <div style="
-            padding: 14px;
-            border-radius: 14px;
-            background: rgba(255,255,255,0.72);
-            border: 1px solid rgba(0,0,0,0.10);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-        ">
-            <div style="font-size: 0.95rem; font-weight: 800; margin-bottom: 8px;">
-                🏆 Hall of Fame Quote
+        st.markdown(
+            """
+            <div style="
+                padding: 12px;
+                border-radius: 14px;
+                background: rgba(255,255,255,0.72);
+                border: 1px solid rgba(0,0,0,0.10);
+                box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+                margin-bottom: 10px;
+            ">
+                <div style="font-size:0.92rem; font-weight:800; margin-bottom:6px;">
+                    Change Access Code
+                </div>
+                <div style="font-size:0.85rem; opacity:0.85;">
+                    Updates Supabase instantly.
+                </div>
             </div>
-            <div style="font-size: 0.98rem; font-weight: 700; line-height: 1.35;">
-                “{quote}”
-            </div>
-            <div style="margin-top: 10px; font-size: 0.90rem; font-weight: 800; opacity: 0.85;">
-                — {who}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with st.sidebar:
-    # ... your existing sidebar stuff above (logo, tags, quote, etc.)
-
-    # -----------------------------
-    # ADMIN SIDEBAR (BOTTOM)
-    # -----------------------------
-    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-    st.markdown("---")
-
-    with st.expander("🔐 Admin", expanded=False):
-        pin = st.text_input(
-            "Admin PIN",
-            type="password",
-            label_visibility="collapsed",
-            placeholder="Admin PIN",
-            key="admin_pin_input",
+            """,
+            unsafe_allow_html=True,
         )
 
-        if pin != st.secrets.get("ADMIN_PIN", ""):
-            st.caption("Admin access only.")
-        else:
-            st.markdown(
-                """
-                <div style="
-                    padding: 12px;
-                    border-radius: 14px;
-                    background: rgba(255,255,255,0.72);
-                    border: 1px solid rgba(0,0,0,0.10);
-                    box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-                    margin-bottom: 10px;
-                ">
-                    <div style="font-size:0.92rem; font-weight:800; margin-bottom:6px;">
-                        Change Access Code
-                    </div>
-                    <div style="font-size:0.85rem; opacity:0.85;">
-                        Updates Supabase instantly.
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            # ✅ PERMANENT PARACHUTE (leave this)
-            if st.button("🔄 Emergency Reset: Codes = TEAM CODE", key="admin_emergency_reset"):
-                res = supabase.table("team_access").select("id, team_code").execute()
+        # ✅ PERMANENT PARACHUTE (leave this)
+        if st.button("🔄 Emergency Reset: Codes = TEAM CODE", key="admin_emergency_reset"):
+            try:
+                res = admin.table("team_access").select("id, team_code").execute()
                 rows = res.data or []
 
                 updated = 0
@@ -1754,95 +1709,119 @@ with st.sidebar:
                     rid = r.get("id")
                     code = (r.get("team_code") or "").strip().upper()
                     if rid and code:
-                        supabase.table("team_access").update(
+                        admin.table("team_access").update(
                             {"code_hash": hash_access_code(code)}
                         ).eq("id", rid).execute()
                         updated += 1
 
-                load_team_codes.clear()
+                try:
+                    load_team_codes.clear()
+                except Exception:
+                    pass
+
                 st.success(f"Reset {updated} teams. Access code = TEAM CODE (ex: YUKON).")
                 st.rerun()
+            except Exception as e:
+                st.error(f"Emergency reset failed: {e}")
 
-            # Load teams DIRECT from Supabase
+        # Load teams DIRECT from Supabase (service role inside Admin)
+        try:
             res = (
-                supabase.table("team_access")
+                admin.table("team_access")
                 .select("id, team_code, team_name, is_active")
                 .eq("is_active", True)
                 .execute()
             )
             rows = res.data or []
+        except Exception as e:
+            rows = []
+            st.error(f"Could not load teams: {e}")
 
-            teams = []
-            for r in rows:
-                rid = r.get("id")
-                code = (r.get("team_code") or "").strip().upper()
-                name = (r.get("team_name") or "").strip()
-                if rid and code:
-                    label = f"{code} — {name}" if name else code
-                    teams.append({"id": rid, "label": label})
+        teams = []
+        for r in rows:
+            rid = r.get("id")
+            code = (r.get("team_code") or "").strip().upper()
+            name = (r.get("team_name") or "").strip()
+            if rid and code:
+                label = f"{code} — {name}" if name else code
+                teams.append({"id": rid, "label": label})
 
-            teams = sorted(teams, key=lambda x: x["label"])
+        teams = sorted(teams, key=lambda x: x["label"])
 
-            if not teams:
-                st.error("No active teams found in team_access.")
-            else:
-                pick = st.selectbox(
-                    "Team",
-                    options=teams,
-                    format_func=lambda x: x["label"],
-                    key="admin_team_pick",
-                )
+        if not teams:
+            st.error("No active teams found in team_access.")
+        else:
+            pick = st.selectbox(
+                "Team",
+                options=teams,
+                format_func=lambda x: x["label"],
+                key="admin_team_pick",
+            )
 
-                new_code = st.text_input("New Code", type="password", key="admin_new_code")
-                confirm = st.text_input("Confirm", type="password", key="admin_confirm")
+            new_code = st.text_input("New Code", type="password", key="admin_new_code")
+            confirm = st.text_input("Confirm", type="password", key="admin_confirm")
 
-                c1, c2 = st.columns(2)
-                update_btn = c1.button("💾 Update", use_container_width=True, key="admin_update_btn")
-                clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
+            c1, c2 = st.columns(2)
+            update_btn = c1.button("💾 Update", use_container_width=True, key="admin_update_btn")
+            clear_btn  = c2.button("Clear", use_container_width=True, key="admin_clear_btn")
 
-                if clear_btn:
-                    st.session_state["admin_new_code"] = ""
-                    st.session_state["admin_confirm"] = ""
-                    st.rerun()
+            if clear_btn:
+                st.session_state["admin_new_code"] = ""
+                st.session_state["admin_confirm"] = ""
+                st.rerun()
 
-                if update_btn:
-                    if not (new_code or "").strip():
-                        st.error("Enter a new code.")
-                    elif new_code != confirm:
-                        st.error("Codes don’t match.")
-                    else:
-                        ok = admin_set_access_code_by_id(pick["id"], new_code)
+            if update_btn:
+                if not (new_code or "").strip():
+                    st.error("Enter a new code.")
+                elif new_code != confirm:
+                    st.error("Codes don’t match.")
+                else:
+                    # Update by ID using service-role
+                    try:
+                        new_hash = hash_access_code(new_code)
+                        upd = (
+                            admin.table("team_access")
+                            .update({"code_hash": new_hash})
+                            .eq("id", pick["id"])
+                            .execute()
+                        )
+                        ok = bool(getattr(upd, "data", None))
                         if ok:
                             st.success("✅ Access code updated.")
-                            load_team_codes.clear()
+                            try:
+                                load_team_codes.clear()
+                            except Exception:
+                                pass
                             st.rerun()
                         else:
-                            st.error("Update failed.")
+                            st.error("Update failed (no rows updated).")
+                    except Exception as e:
+                        st.error(f"Update failed: {e}")
 
+        st.markdown("### ➕ Add New School")
 
-            st.markdown("### ➕ Add New School")
-    
-            with st.expander("Create School", expanded=False):
-                colA, colB = st.columns(2)
-                with colA:
-                    new_team_name = st.text_input("School Name", key="new_team_name")
-                    new_team_code = st.text_input("Team Code (ex: ROCK, YUKON)", key="new_team_code")
-                with colB:
-                    new_team_slug = st.text_input("Team Slug (unique)", key="new_team_slug")
-                    new_active = st.checkbox("Active", value=True, key="new_team_active")
-    
-                new_logo = st.file_uploader("Team Logo", type=["png","jpg","jpeg","webp"], key="new_logo")
-                new_bg   = st.file_uploader("Background Image", type=["png","jpg","jpeg","webp"], key="new_bg")
-    
-                if st.button("🚀 Create School", key="create_school_btn"):
-                    if not (new_team_name or "").strip() or not (new_team_code or "").strip():
-                        st.error("School name and team code are required.")
-                    else:
-                        team_slug = (new_team_slug or new_team_name.lower().replace(" ", "_")).strip()
-                        team_code = new_team_code.upper().strip()
-    
+        with st.expander("Create School", expanded=False):
+            colA, colB = st.columns(2)
+            with colA:
+                new_team_name = st.text_input("School Name", key="new_team_name")
+                new_team_code = st.text_input("Team Code (ex: ROCK, YUKON)", key="new_team_code")
+            with colB:
+                new_team_slug = st.text_input("Team Slug (unique)", key="new_team_slug")
+                new_active = st.checkbox("Active", value=True, key="new_team_active")
+
+            new_logo = st.file_uploader("Team Logo", type=["png","jpg","jpeg","webp"], key="new_logo")
+            new_bg   = st.file_uploader("Background Image", type=["png","jpg","jpeg","webp"], key="new_bg")
+
+            if st.button("🚀 Create School", key="create_school_btn"):
+                if not (new_team_name or "").strip() or not (new_team_code or "").strip():
+                    st.error("School name and team code are required.")
+                else:
+                    team_slug = (new_team_slug or new_team_name.lower().replace(" ", "_")).strip()
+                    team_code = new_team_code.upper().strip()
+
+                    try:
                         exists = (
-                            supabase.table("team_access")
+                            admin.table("team_access")
                             .select("id")
                             .eq("team_slug", team_slug)
                             .limit(1)
@@ -1850,51 +1829,68 @@ with st.sidebar:
                         )
                         if getattr(exists, "data", None):
                             st.error("That team slug already exists.")
-                        else:
-                            bucket = "team-assets"
-                            try:
-                                supabase.storage.create_bucket(bucket, public=True)
-                            except Exception:
-                                pass
-    
-                            logo_url = None
-                            bg_url = None
-    
-                            if new_logo:
-                                path = f"{team_slug}/logo.png"
-                                supabase.storage.from_(bucket).upload(
-                                    path,
-                                    new_logo.getvalue(),
-                                    file_options={"content-type": new_logo.type, "upsert": True},
-                                )
-                                logo_url = supabase.storage.from_(bucket).get_public_url(path)
-    
-                            if new_bg:
-                                path = f"{team_slug}/background.png"
-                                supabase.storage.from_(bucket).upload(
-                                    path,
-                                    new_bg.getvalue(),
-                                    file_options={"content-type": new_bg.type, "upsert": True},
-                                )
-                                bg_url = supabase.storage.from_(bucket).get_public_url(path)
-    
-                            raw_key = secrets.token_hex(3).upper()
-                            key_hash = hash_access_code(raw_key)
-    
-                            supabase.table("team_access").insert({
-                                "team_slug": team_slug,
-                                "team_code": team_code,
-                                "team_name": new_team_name.strip(),
-                                "code_hash": key_hash,
-                                "is_active": bool(new_active),
-                                "logo_url": logo_url,
-                                "background_url": bg_url,
-                            }).execute()
-    
-                            st.success("School created!")
-                            st.code(f"Access Key: {raw_key}")
+                            st.stop()
+                    except Exception as e:
+                        st.error(f"Slug check failed: {e}")
+                        st.stop()
+
+                    bucket = "team-assets"
+                    try:
+                        # Attempt to create bucket (ignore if already exists)
+                        admin.storage.create_bucket(bucket, public=True)
+                    except Exception:
+                        pass
+
+                    logo_url = None
+                    bg_url = None
+
+                    try:
+                        if new_logo:
+                            path = f"{team_slug}/logo.png"
+                            admin.storage.from_(bucket).upload(
+                                path,
+                                new_logo.getvalue(),
+                                file_options={"content-type": new_logo.type, "upsert": True},
+                            )
+                            logo_url = admin.storage.from_(bucket).get_public_url(path)
+
+                        if new_bg:
+                            path = f"{team_slug}/background.png"
+                            admin.storage.from_(bucket).upload(
+                                path,
+                                new_bg.getvalue(),
+                                file_options={"content-type": new_bg.type, "upsert": True},
+                            )
+                            bg_url = admin.storage.from_(bucket).get_public_url(path)
+                    except Exception as e:
+                        st.error(f"Asset upload failed: {e}")
+                        st.stop()
+
+                    # Generate a short access key (no extra imports needed)
+                    raw_key = uuid.uuid4().hex[:6].upper()
+                    key_hash = hash_access_code(raw_key)
+
+                    try:
+                        admin.table("team_access").insert({
+                            "team_slug": team_slug,
+                            "team_code": team_code,
+                            "team_name": new_team_name.strip(),
+                            "code_hash": key_hash,
+                            "is_active": bool(new_active),
+                            "logo_url": logo_url,
+                            "background_url": bg_url,
+                        }).execute()
+
+                        st.success("School created!")
+                        st.code(f"Access Key: {raw_key}")
+                        try:
                             load_team_codes.clear()
-                            st.rerun()
+                        except Exception:
+                            pass
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Create school failed: {e}")
+
 
 
    
@@ -3483,6 +3479,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
