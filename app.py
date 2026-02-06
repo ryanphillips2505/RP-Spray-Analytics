@@ -1056,17 +1056,20 @@ def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str
     games_played = 0
     archived_players = set()
 
-  try:
-    res = (
-        supabase.table("team_access")
-        .select("team_code, code_hash")
-        .eq("is_active", True)
-        .execute()
-    )
-except Exception as e:
-    st.error("SUPABASE RAW ERROR:")
-    st.code(repr(e))
-    st.stop()
+    try:
+        res = (
+            supabase
+            .table("team_access")
+            .select("team_code, code_hash")
+            .eq("is_active", True)
+            .execute()
+        )
+    except Exception as e:
+        st.error("SUPABASE RAW ERROR:")
+        st.code(repr(e))
+        st.stop()
+
+
 
     except Exception as e:
         _show_db_error(e, "Supabase SELECT failed on season_totals")
@@ -3577,6 +3580,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
