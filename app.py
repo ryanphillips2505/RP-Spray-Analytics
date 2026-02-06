@@ -1919,10 +1919,10 @@ with st.expander("🔐 Admin", expanded=False):
                         st.error(f"Create school failed: {e}")    
 
 
-        st.markdown("### ➕ Add New School")
+    st.markdown("### ➕ Add New School")
 
-        with st.expander("Create School", expanded=False):
-
+with st.expander("Create School", expanded=False):
+        
     colA, colB = st.columns(2)
 
     with colA:
