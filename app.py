@@ -323,6 +323,9 @@ if st.session_state.get("team_code"):
 
 
 TEAM_CODE, _ = require_team_access()
+st.error(f"DEBUG TEAM_CODE = {TEAM_CODE!r}")
+
+
 
 
 # -----------------------------
