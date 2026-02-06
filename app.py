@@ -1596,7 +1596,9 @@ def admin_set_access_code(team_slug: str, team_code: str, new_code: str) -> bool
 
     new_hash = hash_access_code(new_code)
 
-    q = supabase.table("team_access").update({"code_hash": new_hash})
+    admin = supa_admin()
+    q = admin.table("team_access").update({"code_hash": new_hash})
+    
     if team_slug:
         q = q.eq("team_slug", team_slug)
     if team_code:
@@ -1651,8 +1653,8 @@ def admin_set_access_code_by_id(row_id: int, new_code: str) -> bool:
     except Exception:
         return False
 
-    new_hash = hash_access_code(new_code)
-    res = supabase.table("team_access").update({"code_hash": new_hash}).eq("id", rid).execute()
+    admin = supa_admin()
+    res = admin.table("team_access").update({"code_hash": new_hash}).eq("id", rid).execute()
     return bool(getattr(res, "data", None))
 
 
@@ -3479,6 +3481,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
