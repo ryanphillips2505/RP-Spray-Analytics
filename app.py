@@ -277,43 +277,28 @@ def require_team_access():
 
         rows = res.data or []
         matched = None
-        for r in rows:
+    
+     for r in rows:
         stored = str((r or {}).get("code_hash", "")).strip()
         tc = str((r or {}).get("team_code", "")).strip().upper()
 
         # TEMP bootstrap: first successful use sets the real hash in Supabase
         if tc == "YUKON" and stored.upper() == "TEMP":
             try:
-                supabase.table("team_access").update({"code_hash": entered_hash}).eq("team_code", "YUKON").execute()
+                supabase.table("team_access").update(
+                    {"code_hash": entered_hash}
+                ).eq("team_code", "YUKON").execute()
             except Exception as e:
                 st.error("Failed to write new Yukon code hash:")
                 st.code(repr(e))
                 st.stop()
+
             matched = {"team_code": "YUKON", "code_hash": entered_hash}
             break
 
         if stored and entered_hash == stored:
             matched = r
             break
-
-
-        if not matched:
-            st.error("Invalid access code")
-            st.stop()
-
-        team_code = str(matched.get("team_code", "") or "").strip().upper()
-
-        if not license_is_active(team_code):
-            st.error("License inactive. Contact admin.")
-            st.stop()
-
-        st.session_state.team_code = team_code
-        st.rerun()
-
-    st.stop()
-
-
-
 
 
 TEAM_CODE, _ = require_team_access()
