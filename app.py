@@ -1090,31 +1090,28 @@ supabase_health_check_or_stop()
 
 
 def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str]):
-    """
-    Returns (season_team, season_players, games_played, processed_hashes_set, archived_players_set)
-    archived_players are players who exist in DB totals but are not on the current roster (or were removed).
-    """
     season_team = empty_stat_dict()
     season_players = {p: empty_stat_dict() for p in current_roster}
     games_played = 0
     archived_players = set()
 
+    # ---- Load season_totals (correct table)
     try:
         res = (
-            supabase
-            .table("team_access")
-            .select("team_code, code_hash")
-            .eq("is_active", True)
+            supabase.table("season_totals")
+            .select("data, games_played")
+            .eq("team_code", str(team_code).strip().upper())
+            .eq("team_key", str(team_key).strip())
+            .limit(1)
             .execute()
         )
     except Exception as e:
-        st.error("SUPABASE RAW ERROR:")
-        st.code(repr(e))
+        _show_db_error(e, "Supabase SELECT failed on season_totals")
+        _render_supabase_fix_block()
         st.stop()
 
-
     if res.data:
-        row = res.data[0]
+        row = res.data[0] or {}
         payload = row.get("data") or {}
 
         raw_team = payload.get("team") or {}
@@ -1128,24 +1125,22 @@ def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str
             for p, stats in raw_players.items():
                 season_players[p] = ensure_all_keys(stats) if isinstance(stats, dict) else empty_stat_dict()
 
-        # Ensure current roster always exists in dict (so new guys show up immediately)
         for p in current_roster:
-            if p not in season_players:
-                season_players[p] = empty_stat_dict()
+            season_players.setdefault(p, empty_stat_dict())
 
         games_played = int(row.get("games_played") or 0)
 
-        # Archived list stored in meta (optional)
         ap = raw_meta.get("archived_players", []) if isinstance(raw_meta, dict) else []
         if isinstance(ap, list):
             archived_players = {str(x).strip().strip('"') for x in ap if str(x).strip()}
 
+    # ---- Load processed_games
     try:
         pres = (
             supabase.table("processed_games")
             .select("game_hash")
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
+            .eq("team_code", str(team_code).strip().upper())
+            .eq("team_key", str(team_key).strip())
             .execute()
         )
     except Exception as e:
@@ -1153,13 +1148,9 @@ def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str
         _render_supabase_fix_block()
         st.stop()
 
-    processed_set = set()
-    if pres.data:
-        processed_set = {r["game_hash"] for r in pres.data if r.get("game_hash")}
+    processed_set = {r["game_hash"] for r in (pres.data or []) if r.get("game_hash")}
 
     return season_team, season_players, games_played, processed_set, archived_players
-
-
 
 
 def db_get_coach_notes(team_code: str, team_key: str) -> str:
@@ -1693,12 +1684,12 @@ def hash_access_code__OLD_DO_NOT_USE_2(raw_code: str) -> str:
     return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
 
 def admin_set_access_code_by_id(row_id: int, new_code: str) -> bool:
-    """Updates team_access.code_hash for a team by id (most reliable)."""
     try:
         rid = int(row_id)
     except Exception:
         return False
 
+    new_hash = hash_access_code(new_code)
     admin = supa_admin()
     res = admin.table("team_access").update({"code_hash": new_hash}).eq("id", rid).execute()
     return bool(getattr(res, "data", None))
