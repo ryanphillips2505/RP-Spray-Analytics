@@ -1057,11 +1057,11 @@ def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str
     archived_players = set()
 
     try:
-    res = (
-        supabase.table("team_access")
-        .select("team_code, code_hash")
-        .eq("is_active", True)
-        .execute()
+        res = (
+            supabase.table("team_access")
+            .select("team_code, code_hash")
+            .eq("is_active", True)
+            .execute()
     )
 except Exception as e:
     st.error("SUPABASE RAW ERROR:")
@@ -3580,6 +3580,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
