@@ -1708,6 +1708,8 @@ with st.expander("🔐 Admin", expanded=False):
             try:
                 res = admin.table("team_access").select("id, team_code").execute()
                 rows = res.data or []
+                st.write("DEBUG UNLOCK ROW COUNT:", len(rows))
+
 
                 updated = 0
                 for r in rows:
@@ -3484,6 +3486,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
