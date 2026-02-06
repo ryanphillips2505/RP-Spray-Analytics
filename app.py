@@ -249,8 +249,7 @@ def require_team_access():
         type="password",
         placeholder="Enter Access Code",
         key="access_code_input",
-)
-
+    )
 
     # ---------------------------------
     # NORMAL UNLOCK
@@ -264,12 +263,17 @@ def require_team_access():
 
         entered_hash = hash_access_code(entered)
 
-        res = (
-            supabase.table("team_access")
-            .select("team_code, code_hash")
-            .eq("is_active", True)
-            .execute()
-        )
+        try:
+            res = (
+                supabase.table("team_access")
+                .select("team_code, code_hash")
+                .eq("is_active", True)
+                .execute()
+            )
+        except Exception as e:
+            st.error("SUPABASE RAW ERROR:")
+            st.code(repr(e))
+            st.stop()
 
         rows = res.data or []
         matched = None
@@ -293,6 +297,7 @@ def require_team_access():
         st.rerun()
 
     st.stop()
+
 
 
 
@@ -3580,6 +3585,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
