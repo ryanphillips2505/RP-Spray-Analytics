@@ -994,10 +994,10 @@ If it still errors after running the SQL, your Streamlit **secrets** are wrong.
 @st.cache_resource(show_spinner=False)
 def get_supabase() -> Client:
     url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_SERVICE_KEY", "").strip()  # service role key (server-side only)
+    key = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     if not url or not key:
-        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in Streamlit secrets.")
-    return create_client(url, key)
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets.")
+
 
 
 try:
@@ -3483,6 +3483,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
