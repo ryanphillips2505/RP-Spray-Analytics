@@ -357,7 +357,7 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
 # -----------------------------
 TEAM_CODE, _ = require_team_access()
 
-TEAM_CFG = load_team_cfg_from_file(TEAM_CODE) or {}
+TEAM_CFG = _load_team_cfg_from_file(TEAM_CODE) or {}
 st.session_state["TEAM_CFG"] = TEAM_CFG
 
 if "team_key" not in st.session_state:
@@ -3651,79 +3651,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
