@@ -1058,12 +1058,16 @@ def db_load_season_totals(team_code: str, team_key: str, current_roster: set[str
 
     try:
         res = (
-            supabase.table("season_totals")
-            .select("data, games_played")
-            .eq("team_code", team_code)
-            .eq("team_key", team_key)
-            .limit(1)
+            supabase.table("team_access")
+            .select("team_code, code_hash")
+            .eq("is_active", True)
             .execute()
+        )
+    except Exception as e:
+        st.error("SUPABASE RAW ERROR:")
+        st.code(repr(e))
+        st.stop()
+
         )
     except Exception as e:
         _show_db_error(e, "Supabase SELECT failed on season_totals")
@@ -3574,6 +3578,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
