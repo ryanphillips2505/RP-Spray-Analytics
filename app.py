@@ -82,7 +82,7 @@ def supa_public() -> Client:
 def supa_admin() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_ROLE_KEY"])
 
-supabase: Client = supa_public()
+supabase: Client = supa_admin()
 
 def hash_access_code(code: str) -> str:
     pepper = st.secrets["ACCESS_CODE_PEPPER"]
