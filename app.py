@@ -1022,20 +1022,26 @@ If it still errors after running the SQL, your Streamlit **secrets** are wrong.
     )
 
 
-@st.cache_resource(show_spinner=False)
-def get_supabase() -> Client:
-    url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    if not url or not key:
-        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets.")
+@st.cache_resource
+def get_supabase():
+    url = (st.secrets.get("SUPABASE_URL") or "").strip()
+    service = (st.secrets.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
 
+    if not url or not service:
+        st.error("Supabase secrets missing / invalid")
+        st.code(
+            f"SUPABASE_URL present: {bool(url)}\n"
+            f"SUPABASE_SERVICE_ROLE_KEY present: {bool(service)}"
+        )
+        st.stop()
 
+    try:
+        return create_client(url, service)
+    except Exception as e:
+        st.error("Failed to create Supabase service client")
+        st.code(repr(e))
+        st.stop()
 
-try:
-    supabase = get_supabase()
-except Exception as e:
-    _show_db_error(e, "Supabase secrets missing / invalid")
-    st.stop()
 
 
 def supa_execute_with_retry(builder, tries: int = 5):
