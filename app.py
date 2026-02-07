@@ -1920,16 +1920,18 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                 logo_url = None
                 bg_url = None
 
-                # ---- Upload assets
+                # ---- Upload assets (Supabase Storage) — FIXED for "Header value must be str or bytes"
                 try:
+                    headers = {"x-upsert": "true"}  # <-- MUST be string, NOT bool
+
                     if new_logo:
                         logo_path = f"{team_slug}/logo.png"
                         admin.storage.from_(bucket).upload(
                             logo_path,
                             new_logo.getvalue(),
                             file_options={
-                                "content-type": new_logo.type or "image/png",
-                                "upsert": "true",   # MUST be string
+                                "content-type": (new_logo.type or "image/png"),
+                                "headers": headers,
                             },
                         )
                         logo_url = admin.storage.from_(bucket).get_public_url(logo_path)
@@ -1940,17 +1942,15 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                             bg_path,
                             new_bg.getvalue(),
                             file_options={
-                                "content-type": new_bg.type or "image/png",
-                                "upsert": "true",   # MUST be string
+                                "content-type": (new_bg.type or "image/png"),
+                                "headers": headers,
                             },
                         )
                         bg_url = admin.storage.from_(bucket).get_public_url(bg_path)
 
                 except Exception as e:
-                    # print(e)  # uncomment ONLY when debugging locally
-                    st.error("Asset upload failed. Please upload a valid image file.")
+                    st.error(f"Asset upload failed: {e}")
                     st.stop()
-
 
 
                 raw_key = uuid.uuid4().hex[:6].upper()
