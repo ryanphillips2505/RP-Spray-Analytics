@@ -265,11 +265,11 @@ def load_team_codes() -> dict:
     """
     try:
         res = (
-            supabase.table("team_access")
-            .select("id, team_slug, team_code, team_name, code_hash, is_active")
-            .eq("is_active", True)
-            .execute()
-        )
+    supa_admin().table("team_access")
+    .select("team_code, code_hash, is_active")
+    .eq("is_active", True)
+    .execute()
+)
         rows = res.data or []
         out = {}
         for r in rows:
@@ -371,9 +371,10 @@ def require_team_access():
             # TEMP bootstrap: first successful use sets the real hash in Supabase
             if tc == "YUKON" and stored.upper() == "TEMP":
                 try:
-                    supabase.table("team_access").update(
+                    supa_admin().table("team_access").update(
                         {"code_hash": entered_hash}
                     ).eq("team_code", "YUKON").execute()
+
                 except Exception as e:
                     st.error("Failed to write new Yukon code hash:")
                     st.code(repr(e))
@@ -1523,8 +1524,26 @@ def db_delete_team(team_code: str, team_key: str):
         _render_supabase_fix_block()
         st.stop()
 
-  
-  
+
+
+PRIMARY = SETTINGS.get("primary_color", "#b91c1c")
+SECONDARY = SETTINGS.get("secondary_color", "#111111")
+
+LOGO_PATH = (
+    TEAM_CFG.get("logo_path")
+    or SETTINGS.get("logo_image")
+    or os.path.join("assets", "logo.png")
+)
+
+BG_PATH = (
+    TEAM_CFG.get("background_path")
+    or SETTINGS.get("background_image")
+    or os.path.join("assets", "background.jpg")
+)
+
+if TEAM_CFG:
+    LOGO_PATH = TEAM_CFG.get("logo_path", LOGO_PATH)
+    BG_PATH = TEAM_CFG.get("background_path", BG_PATH)
 
 # -----------------------------
 # BRANDING + BACKGROUND
@@ -1548,26 +1567,6 @@ def get_base64_image(path_or_url: str) -> str:
 
     with open(path_or_url, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
-
-
-PRIMARY = SETTINGS.get("primary_color", "#b91c1c")
-SECONDARY = SETTINGS.get("secondary_color", "#111111")
-
-LOGO_PATH = (
-    TEAM_CFG.get("logo_path")
-    or SETTINGS.get("logo_image")
-    or os.path.join("assets", "logo.png")
-)
-
-BG_PATH = (
-    TEAM_CFG.get("background_path")
-    or SETTINGS.get("background_image")
-    or os.path.join("assets", "background.jpg")
-)
-
-if TEAM_CFG:
-    LOGO_PATH = TEAM_CFG.get("logo_path", LOGO_PATH)
-    BG_PATH = TEAM_CFG.get("background_path", BG_PATH)
 
 BG_B64 = get_base64_image(BG_PATH)
 
