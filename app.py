@@ -1946,7 +1946,7 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                 raw_key = uuid.uuid4().hex[:6].upper()
                 key_hash = hash_access_code(raw_key)
 
-                try:
+                                try:
                     admin.table("team_access").insert({
                         "team_slug": team_slug,
                         "team_code": team_code,
@@ -1967,10 +1967,12 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
 
                     st.rerun()
 
-                except Exception:
-                    # print(e)  # uncomment ONLY when debugging locally
+                except Exception as e:
+                    # Uncomment ONLY when debugging locally:
+                    # st.code(repr(e))
                     st.error("Create school failed. Please check that the team code and slug are unique.")
                     st.stop()
+
 
 
     
@@ -3572,6 +3574,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 
