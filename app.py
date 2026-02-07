@@ -88,11 +88,61 @@ supabase: Client = supa_admin()
 
 
 
+# ============================
+# AUTH (ONE SOURCE OF TRUTH)
+# ============================
 def hash_access_code(code: str) -> str:
-    pepper = st.secrets["ACCESS_CODE_PEPPER"]
+    pepper = str(st.secrets.get("ACCESS_CODE_PEPPER", "") or "").strip()
+    if not pepper:
+        raise ValueError("Missing ACCESS_CODE_PEPPER in Streamlit secrets.")
     c = (code or "").strip().upper()
-    raw = (pepper + "|" + c).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    if not c:
+        raise ValueError("Blank access code not allowed.")
+    return hashlib.sha256((pepper + "|" + c).encode("utf-8")).hexdigest()
+
+
+def admin_set_access_code(team_slug: str = "", team_code: str = "", new_code: str = "") -> bool:
+    """
+    Updates team_access.code_hash for a team using ONE hashing policy.
+    """
+    team_slug = (team_slug or "").strip()
+    team_code = (team_code or "").strip().upper()
+    new_code  = (new_code or "").strip().upper()
+
+    if not (team_slug or team_code) or not new_code:
+        return False
+
+    new_hash = hash_access_code(new_code)
+
+    admin = supa_admin()
+    q = admin.table("team_access").update({"code_hash": new_hash})
+    if team_slug:
+        q = q.eq("team_slug", team_slug)
+    if team_code:
+        q = q.eq("team_code", team_code)
+
+    res = q.execute()
+    return bool(getattr(res, "data", None))
+
+
+def admin_rehash_access_code(team_code: str) -> bool:
+    """
+    Forces code_hash to match policy: Access Code = TEAM CODE (upper).
+    """
+    tc = (team_code or "").strip().upper()
+    if not tc:
+        return False
+
+    admin = supa_admin()
+    new_hash = hash_access_code(tc)
+
+    res = (
+        admin.table("team_access")
+        .update({"code_hash": new_hash})
+        .eq("team_code", tc)
+        .execute()
+    )
+    return bool(getattr(res, "data", None))
 
 # -----------------------------
 # SUPABASE STORAGE UPLOAD (DIRECT HTTP) — avoids supabase-py header bugs
@@ -1625,35 +1675,6 @@ def get_daily_quote(quotes):
 
 
 # -----------------------------
-# ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
-# -----------------------------
-def hash_access_code__OLD_DO_NOT_USE(raw_code: str) -> str:
-    salt = st.secrets.get("ACCESS_CODE_SALT", "")
-    code = (raw_code or "").strip()
-    if not salt:
-        raise ValueError("Missing ACCESS_CODE_SALT in Streamlit secrets.")
-    if not code:
-        raise ValueError("Blank access code not allowed.")
-    return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
-
-
-def admin_set_access_code(team_slug: str, new_code: str) -> bool:
-    team_slug = (team_slug or "").strip()
-    if not team_slug:
-        return False
-
-    new_hash = hash_access_code(new_code)
-
-    res = (
-        supabase.table("team_access")
-        .update({"code_hash": new_hash})
-        .eq("team_slug", team_slug)
-        .execute()
-    )
-    return bool(getattr(res, "data", None))
-
-
-# -----------------------------
 # SIDEBAR
 # -----------------------------
 import hashlib
@@ -1680,54 +1701,6 @@ def get_daily_quote(quotes):
     idx = int(datetime.utcnow().strftime("%Y%m%d")) % len(quotes)
     return quotes[idx]
 
-# -----------------------------
-# ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
-# -----------------------------
-import hashlib
-
-def hash_access_code(raw_code: str) -> str:
-    """
-    The ONLY hashing function used anywhere in the app.
-    Access code comparisons MUST always use this.
-    """
-    salt = st.secrets.get("ACCESS_CODE_SALT", "")
-    code = (raw_code or "").strip()
-
-    if not salt:
-        raise ValueError("Missing ACCESS_CODE_SALT in Streamlit secrets.")
-    if not code:
-        raise ValueError("Blank access code not allowed.")
-
-    return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
-
-
-def admin_set_access_code(team_slug: str = "", team_code: str = "", new_code: str = "") -> bool:
-    """
-    Updates team_access.code_hash for a team.
-    Uses slug and/or code so it can hit the correct row reliably.
-    """
-    team_slug = (team_slug or "").strip()
-    team_code = (team_code or "").strip().upper()
-    new_code  = (new_code or "").strip()
-
-    if not team_slug and not team_code:
-        return False
-    if not new_code:
-        return False
-
-    new_hash = hash_access_code(new_code)
-
-    admin = supa_admin()
-    q = admin.table("team_access").update({"code_hash": new_hash})
-
-    if team_slug:
-        q = q.eq("team_slug", team_slug)
-    if team_code:
-        q = q.eq("team_code", team_code)
-
-    res = q.execute()
-    return bool(getattr(res, "data", None))
-
 
 def admin_rehash_access_code(team_code: str) -> bool:
     """
@@ -1749,29 +1722,6 @@ def admin_rehash_access_code(team_code: str) -> bool:
     )
     return bool(getattr(res, "data", None))
 
-
-# -----------------------------
-# ACCESS CODE HASHING (ONE SOURCE OF TRUTH)
-# -----------------------------
-def hash_access_code__OLD_DO_NOT_USE_2(raw_code: str) -> str:
-    salt = st.secrets.get("ACCESS_CODE_SALT", "")
-    code = (raw_code or "").strip()
-    if not salt:
-        raise ValueError("Missing ACCESS_CODE_SALT in Streamlit secrets.")
-    if not code:
-        raise ValueError("Blank access code not allowed.")
-    return hashlib.sha256((salt + "|" + code).encode("utf-8")).hexdigest()
-
-def admin_set_access_code_by_id(row_id: int, new_code: str) -> bool:
-    try:
-        rid = int(row_id)
-    except Exception:
-        return False
-
-    new_hash = hash_access_code(new_code)
-    admin = supa_admin()
-    res = admin.table("team_access").update({"code_hash": new_hash}).eq("id", rid).execute()
-    return bool(getattr(res, "data", None))
 
 # -----------------------------
 # SUPABASE STORAGE HELPERS
