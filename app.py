@@ -1599,8 +1599,9 @@ h1.app-title {{
     margin-bottom: 18px !important;
 }}
 
+/* APPLY TO BOTH so Streamlit can't dodge it */
 [data-testid="stApp"],
-[data-testid="stAppViewContainer"] {
+[data-testid="stAppViewContainer"].rp-bg-fix {{
     background-image:
         linear-gradient(rgba(229,231,235,0.30), rgba(229,231,235,0.30)),
         url("{BG_CSS_URL}");
@@ -1608,12 +1609,11 @@ h1.app-title {{
     background-position: center center, center center !important;
     background-attachment: fixed, fixed !important;
 
-    /* gradient normal, image smaller */
+    /* gradient normal, IMAGE smaller */
     background-size: auto, 35% auto !important;
 
     color: #111827;
-}
-
+}}
 
 .spray-card {{
     padding: 12px 14px;
@@ -1629,6 +1629,7 @@ h1.app-title {{
 """,
     unsafe_allow_html=True,
 )
+
 
 
 
