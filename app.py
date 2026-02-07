@@ -1973,7 +1973,7 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
         st.markdown("### ➕ Create School")
 
         # ✅ ONE Create School (inside Admin PIN only)
-        with st.expander("Create School", expanded=False):
+         with st.expander("Create School", expanded=False):
             colA, colB = st.columns(2)
             with colA:
                 new_team_name = st.text_input("School Name", key="new_team_name_admin")
@@ -1986,87 +1986,102 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
             new_bg   = st.file_uploader("Background Image", type=["png", "jpg", "jpeg", "webp"], key="new_bg_admin")
 
             if st.button("🚀 Create School", key="create_school_btn_admin"):
+                # ---- Required fields
                 if not (new_team_name or "").strip() or not (new_team_code or "").strip():
                     st.error("School name and team code are required.")
                     st.stop()
 
                 team_slug = (new_team_slug or new_team_name.lower().replace(" ", "_")).strip()
-                team_code = new_team_code.upper().strip()
+                team_code = (new_team_code or "").strip().upper()
 
-                # slug uniqueness
-                exists = (
-                    admin.table("team_access")
-                    .select("id")
-                    .eq("team_slug", team_slug)
-                    .limit(1)
-                    .execute()
-                )
-                if getattr(exists, "data", None):
-                    st.error("That team slug already exists.")
+                admin = supa_admin()
+
+                # ---- Uniqueness checks (slug + team_code)
+                try:
+                    slug_exists = (
+                        admin.table("team_access")
+                        .select("id")
+                        .eq("team_slug", team_slug)
+                        .limit(1)
+                        .execute()
+                    )
+                    if getattr(slug_exists, "data", None):
+                        st.error("That team slug already exists.")
+                        st.stop()
+
+                    code_exists = (
+                        admin.table("team_access")
+                        .select("id")
+                        .eq("team_code", team_code)
+                        .limit(1)
+                        .execute()
+                    )
+                    if getattr(code_exists, "data", None):
+                        st.error("That TEAM CODE already exists. Pick a different code.")
+                        st.stop()
+                except Exception as e:
+                    st.error("Could not check uniqueness in Supabase.")
+                    st.code(repr(e))
                     st.stop()
 
-                # storage bucket
+                # ---- Upload assets to Supabase Storage (optional)
                 bucket = "team-assets"
-                try:
-                    admin.storage.create_bucket(bucket, public=True)
-                except Exception:
-                    pass
-
-                logo_url = None
-                bg_url = None
-
-                # ---- Upload assets (Supabase Storage) — bulletproof
                 logo_url = None
                 bg_url = None
 
                 try:
                     if new_logo:
-                        logo_bytes = new_logo.getvalue()
-                        logo_ct = new_logo.type or "image/png"
-                        logo_path = f"{team_slug}/logo.png"
-                        logo_url = storage_upload_bytes(bucket, logo_path, logo_bytes, logo_ct)
-
+                        logo_url = storage_upload_bytes(
+                            bucket=bucket,
+                            path=f"{team_slug}/logo.png",
+                            data=new_logo.getvalue(),
+                            content_type=(new_logo.type or "image/png"),
+                        )
                     if new_bg:
-                        bg_bytes = new_bg.getvalue()
-                        bg_ct = new_bg.type or "image/png"
-                        bg_path = f"{team_slug}/background.png"
-                        bg_url = storage_upload_bytes(bucket, bg_path, bg_bytes, bg_ct)
-
+                        bg_url = storage_upload_bytes(
+                            bucket=bucket,
+                            path=f"{team_slug}/background.png",
+                            data=new_bg.getvalue(),
+                            content_type=(new_bg.type or "image/png"),
+                        )
                 except Exception as e:
                     st.error("Asset upload failed.")
                     st.code(repr(e))
                     st.stop()
 
-
-                raw_key = team_code  # access code = TEAM CODE
+                # ---- Access code policy: access code = TEAM CODE
+                raw_key = team_code
                 key_hash = hash_access_code(raw_key)
 
+                # ---- Insert team + auto-license
                 try:
-                    # ---- Insert team
-                    admin.table("team_access").insert({
-                        "team_slug": team_slug,
-                        "team_code": team_code,
-                        "team_name": new_team_name.strip(),
-                        "code_hash": key_hash,
-                        "is_active": bool(new_active),
-                        "logo_url": logo_url,
-                        "background_url": bg_url,
-                    }).execute()
+                    admin.table("team_access").insert(
+                        {
+                            "team_slug": team_slug,
+                            "team_code": team_code,
+                            "team_name": new_team_name.strip(),
+                            "code_hash": key_hash,
+                            "is_active": bool(new_active),
+                            "logo_url": logo_url,
+                            "background_url": bg_url,
+                        }
+                    ).execute()
 
-                    # ✅ Auto-create / activate license so the new team can unlock immediately
+                    # IMPORTANT: your app blocks unlock unless license_is_active(team_code) is True
+                    # So we auto-create/activate the license here.
                     try:
                         admin.table("licenses").upsert(
                             {
                                 "team_code": team_code,
                                 "status": "active",
-                                "expires_at": None,  # set a real date later if you want
+                                "expires_at": None,
                             },
                             on_conflict="team_code",
                         ).execute()
-                    except Exception as e:
-                        st.warning(f"License auto-create skipped: {e}")
+                    except Exception:
+                        pass
 
-                    # ✅ refresh caches so the new team appears instantly
+                    # Refresh caches so the new team can unlock immediately
                     try:
                         load_team_codes.clear()
                     except Exception:
@@ -2074,14 +2089,14 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                     st.cache_data.clear()
 
                     st.success("School created!")
-                    st.code(f"Access Key: {raw_key}")
+                    st.code(f"Access Code (type this to unlock): {raw_key}")
                     st.rerun()
-
 
                 except Exception as e:
                     st.error("Create school failed (Supabase insert rejected it).")
                     st.code(repr(e))
                     st.stop()
+
 
 
    
