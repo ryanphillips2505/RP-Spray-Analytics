@@ -1445,10 +1445,24 @@ def db_delete_team(team_code: str, team_key: str):
 # -----------------------------
 # BRANDING + BACKGROUND
 # -----------------------------
-def get_base64_image(path: str) -> str:
-    if not path or not os.path.exists(path):
+def get_base64_image(path_or_url: str) -> str:
+    """
+    Supports BOTH:
+    - Local file paths (assets/background.jpg)
+    - Supabase public URLs (https://...)
+    """
+    if not path_or_url:
         return ""
-    with open(path, "rb") as f:
+
+    # ✅ If it's a URL, return empty so CSS can use it directly
+    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+        return ""
+
+    # ✅ Local file path
+    if not os.path.exists(path_or_url):
+        return ""
+
+    with open(path_or_url, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
@@ -1472,6 +1486,14 @@ if TEAM_CFG:
     BG_PATH = TEAM_CFG.get("background_path", BG_PATH)
 
 BG_B64 = get_base64_image(BG_PATH)
+
+# ✅ If BG_PATH is a URL (Supabase), use it directly; otherwise use base64 (local file)
+if BG_PATH and (BG_PATH.startswith("http://") or BG_PATH.startswith("https://")):
+    BG_CSS_URL = BG_PATH
+elif BG_B64:
+    BG_CSS_URL = f"data:image/png;base64,{BG_B64}"
+else:
+    BG_CSS_URL = ""
 
 
 # -----------------------------
@@ -1776,8 +1798,25 @@ def storage_upload_bytes(bucket: str, path: str, data: bytes, content_type: str)
 
 # --- Logo (sidebar) ---
 with st.sidebar:
-    if LOGO_PATH and os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, use_container_width=True)
+    # --- Logo: Supabase URL first, then local fallback ---
+    try:
+        # TEAM_CFG should come from your selected team (team_access row / config load)
+        logo_url = (TEAM_CFG or {}).get("logo_url") or (TEAM_CFG or {}).get("logo_plain")  # harmless extra fallback
+        logo_url = (logo_url or "").strip()
+
+        if logo_url:
+            st.image(logo_url, use_container_width=True)
+        else:
+            # fallback to local file if you still support it
+            if LOGO_PATH and os.path.exists(LOGO_PATH):
+                st.image(LOGO_PATH, use_container_width=True)
+    except Exception:
+        # never let branding crash the app
+        try:
+            if LOGO_PATH and os.path.exists(LOGO_PATH):
+                st.image(LOGO_PATH, use_container_width=True)
+        except Exception:
+            pass
 
     # --- Daily quote ---
     try:
