@@ -1920,14 +1920,14 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                 logo_url = None
                 bg_url = None
 
-                # upload assets
+                # ---- Upload assets (Supabase Storage)
                 try:
                     if new_logo:
                         path = f"{team_slug}/logo.png"
                         admin.storage.from_(bucket).upload(
                             path,
                             new_logo.getvalue(),
-                            file_options={"content-type": new_logo.type, "upsert": True},
+                            file_options={"content-type": (new_logo.type or "image/png")},
                         )
                         logo_url = admin.storage.from_(bucket).get_public_url(path)
 
@@ -1936,12 +1936,14 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                         admin.storage.from_(bucket).upload(
                             path,
                             new_bg.getvalue(),
-                            file_options={"content-type": new_bg.type, "upsert": True},
+                            file_options={"content-type": (new_bg.type or "image/png")},
                         )
                         bg_url = admin.storage.from_(bucket).get_public_url(path)
+
                 except Exception as e:
                     st.error(f"Asset upload failed: {e}")
                     st.stop()
+
 
                 raw_key = uuid.uuid4().hex[:6].upper()
                 key_hash = hash_access_code(raw_key)
