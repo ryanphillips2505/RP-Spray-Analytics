@@ -1599,23 +1599,21 @@ h1.app-title {{
     margin-bottom: 18px !important;
 }}
 
-[/* Apply to BOTH containers so Streamlit can’t dodge it */
-[data-testid="stApp"], 
+[data-testid="stApp"],
 [data-testid="stAppViewContainer"] {
     background-image:
-        linear-gradient(rgba(229,231,235,0.90), rgba(229,231,235,0.90)),
+        linear-gradient(rgba(229,231,235,0.30), rgba(229,231,235,0.30)),
         url("{BG_CSS_URL}");
     background-repeat: no-repeat, no-repeat !important;
     background-position: center center, center center !important;
     background-attachment: fixed, fixed !important;
 
-    /* IMPORTANT: size per layer: gradient normal, image half size */
-    background-size: auto, 50% auto !important;
+    /* gradient normal, image smaller */
+    background-size: auto, 35% auto !important;
 
     color: #111827;
 }
 
-}}
 
 .spray-card {{
     padding: 12px 14px;
