@@ -1723,6 +1723,45 @@ def admin_set_access_code_by_id(row_id: int, new_code: str) -> bool:
     res = admin.table("team_access").update({"code_hash": new_hash}).eq("id", rid).execute()
     return bool(getattr(res, "data", None))
 
+# -----------------------------
+# SUPABASE STORAGE HELPERS
+# -----------------------------
+
+def ensure_bucket(admin, bucket: str):
+    """
+    Ensures a public bucket exists. Safe to call repeatedly.
+    """
+    try:
+        admin.storage.create_bucket(bucket, public=True)
+    except Exception:
+        # Bucket already exists
+        pass
+
+
+def storage_upload_bytes(bucket: str, path: str, data: bytes, content_type: str) -> str:
+    """
+    Upload raw bytes to Supabase Storage and return public URL.
+    Bulletproof: no bool headers, no silent failures.
+    """
+    admin = supa_admin()
+
+    ensure_bucket(admin, bucket)
+
+    res = admin.storage.from_(bucket).upload(
+        path,
+        data,
+        file_options={
+            "content-type": content_type,
+            "x-upsert": "true",  # MUST be string
+        },
+    )
+
+    if not res:
+        raise RuntimeError("Storage upload returned empty response")
+
+    return admin.storage.from_(bucket).get_public_url(path)
+
+
 
 # =============================
 # SIDEBAR (Logo + Quote + Admin)
@@ -1756,6 +1795,32 @@ with st.sidebar:
         pass
 
     st.markdown("---")
+
+def ensure_bucket(admin_client, bucket_name: str):
+    # Creates bucket if missing. If it already exists, ignore.
+    try:
+        admin_client.storage.create_bucket(bucket_name, public=True)
+    except Exception:
+        pass
+
+def storage_upload_bytes(admin_client, bucket: str, path: str, data: bytes, content_type: str) -> str:
+    """
+    Uploads bytes to Supabase Storage and returns public URL.
+    Uses 'x-upsert' header as string to avoid the bool header bug.
+    """
+    # Ensure bucket exists (or at least try)
+    ensure_bucket(admin_client, bucket)
+
+    # Upload with upsert header as STRING
+    admin_client.storage.from_(bucket).upload(
+        path,
+        data,
+        file_options={
+            "content-type": content_type,
+            "headers": {"x-upsert": "true"},
+        },
+    )
+    return admin_client.storage.from_(bucket).get_public_url(path)
 
 
 # =============================
@@ -1973,7 +2038,7 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                     st.stop()
 
 
-                raw_key = uuid.uuid4().hex[:6].upper()
+                raw_key = team_code  # access code = TEAM CODE
                 key_hash = hash_access_code(raw_key)
 
                 try:
@@ -1988,21 +2053,20 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                         "background_url": bg_url,
                     }).execute()
 
-                    # ✅ PROBLEM 2 FIX: auto-create/activate license so the code will unlock
+                    # ✅ Auto-create / activate license so the new team can unlock immediately
                     try:
                         admin.table("licenses").upsert(
                             {
                                 "team_code": team_code,
                                 "status": "active",
-                                "expires_at": None,  # or set a date if you want
+                                "expires_at": None,  # set a real date later if you want
                             },
                             on_conflict="team_code",
                         ).execute()
-                    except Exception:
-                        # If licenses table isn't set up yet, don't crash Create School
-                        pass
+                    except Exception as e:
+                        st.warning(f"License auto-create skipped: {e}")
 
-                    # refresh cached unlock/team lists
+                    # ✅ refresh caches so the new team appears instantly
                     try:
                         load_team_codes.clear()
                     except Exception:
@@ -2012,6 +2076,7 @@ with st.sidebar.expander("🔐 Admin", expanded=False):
                     st.success("School created!")
                     st.code(f"Access Key: {raw_key}")
                     st.rerun()
+
 
                 except Exception as e:
                     st.error("Create school failed (Supabase insert rejected it).")
