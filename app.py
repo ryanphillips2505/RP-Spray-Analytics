@@ -17,9 +17,6 @@ _RP_RUN_NONCE = st.session_state["_rp_run_nonce"]
 import os
 import json
 import base64
-def get_base64_image(path_or_url: str) -> str:
-    return get_base64_image(path_or_url)
-
 import re
 import hashlib
 import httpx
@@ -89,6 +86,7 @@ def _write_table_two_blocks(ws, start_row, cols, row_values, split_at=None, gap=
 
     return r
 
+
 from typing import Optional, Tuple
 
 import pandas as pd
@@ -104,12 +102,13 @@ from supabase import create_client, Client
 def supa_public() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
 
+
 @st.cache_resource(show_spinner=False)
 def supa_admin() -> Client:
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_ROLE_KEY"])
 
-supabase: Client = supa_admin()
 
+supabase: Client = supa_admin()
 
 
 # ============================
@@ -131,7 +130,7 @@ def admin_set_access_code(team_slug: str = "", team_code: str = "", new_code: st
     """
     team_slug = (team_slug or "").strip()
     team_code = (team_code or "").strip().upper()
-    new_code  = (new_code or "").strip().upper()
+    new_code = (new_code or "").strip().upper()
 
     if not (team_slug or team_code) or not new_code:
         return False
@@ -168,6 +167,7 @@ def admin_rehash_access_code(team_code: str) -> bool:
     )
     return bool(getattr(res, "data", None))
 
+
 # -----------------------------
 # SUPABASE STORAGE UPLOAD (DIRECT HTTP) — avoids supabase-py header bugs
 # -----------------------------
@@ -190,27 +190,6 @@ def storage_upload_bytes(bucket: str, path: str, data: bytes, content_type: str)
 
     # public URL (bucket must be public)
     return f"{base_url}/storage/v1/object/public/{bucket}/{path}"
-
-
-def admin_set_access_code(team_slug: str, team_code: str, new_code: str) -> bool:
-    team_slug = (team_slug or "").strip()
-    team_code = (team_code or "").strip().upper()
-    if not team_slug and not team_code:
-        return False
-
-    new_hash = hash_access_code(new_code)
-
-    admin = supa_admin()
-    q = admin.table("team_access").update({"code_hash": new_hash})
-
-    # Update by whichever identifier exists (and both if both exist)
-    if team_slug:
-        q = q.eq("team_slug", team_slug)
-    if team_code:
-        q = q.eq("team_code", team_code)
-
-    res = q.execute()
-    return bool(getattr(res, "data", None))
 
 
 # -----------------------------
@@ -271,7 +250,7 @@ st.markdown(
     section[data-testid="stSidebar"] { display: block !important; }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # ============================
@@ -279,6 +258,7 @@ st.markdown(
 # ============================
 
 from datetime import datetime, timezone
+
 
 @st.cache_data(show_spinner=False)
 def load_team_codes() -> dict:
@@ -289,11 +269,11 @@ def load_team_codes() -> dict:
     """
     try:
         res = (
-    supa_admin().table("team_access")
-    .select("team_code, code_hash, is_active")
-    .eq("is_active", True)
-    .execute()
-)
+            supa_admin().table("team_access")
+            .select("team_code, code_hash, is_active")
+            .eq("is_active", True)
+            .execute()
+        )
         rows = res.data or []
         out = {}
         for r in rows:
@@ -351,7 +331,6 @@ def require_team_access():
     if team_code:
         return team_code, {"team_code": team_code, "code_hash": code_hash}
 
-
     st.markdown("## Enter Access Code")
 
     code_raw = st.text_input(
@@ -398,7 +377,6 @@ def require_team_access():
                     supa_admin().table("team_access").update(
                         {"code_hash": entered_hash}
                     ).eq("team_code", "YUKON").execute()
-
                 except Exception as e:
                     st.error("Failed to write new Yukon code hash:")
                     st.code(repr(e))
@@ -458,6 +436,7 @@ def _load_team_cfg_from_file(team_code: str) -> dict:
     except Exception:
         return {}
 
+
 # -----------------------------
 # TEAM ACCESS + CFG BOOTSTRAP
 # -----------------------------
@@ -470,7 +449,9 @@ if "team_key" not in st.session_state:
     st.session_state["team_key"] = TEAM_CODE.lower()
 
 if DEBUG:
-    st.error(f"DEBUG SETTINGS_PATH={SETTINGS_PATH!r}  exists={os.path.exists(SETTINGS_PATH)}  TEAM_CFG_keys={list(TEAM_CFG.keys())}")
+    st.error(
+        f"DEBUG SETTINGS_PATH={SETTINGS_PATH!r}  exists={os.path.exists(SETTINGS_PATH)}  TEAM_CFG_keys={list(TEAM_CFG.keys())}"
+    )
 
 
 # ===============================
@@ -483,7 +464,6 @@ if _TERMS_KEY not in st.session_state:
     st.session_state[_TERMS_KEY] = False
 
 if not st.session_state[_TERMS_KEY]:
-
     st.title("Terms of Use")
 
     terms_text = """
@@ -542,6 +522,7 @@ Access may be revoked immediately for violations without refund.
 
     st.stop()  # ✅ ONLY stop while locked
 
+
 # -----------------------------
 # RESOLVED TEAM BRANDING (logo + background)
 # Priority:
@@ -549,12 +530,11 @@ Access may be revoked immediately for violations without refund.
 # 2) TEAM_CFG logo_path/background_path (local)
 # 3) SETTINGS defaults (local)
 # -----------------------------
-
 TEAM_CODE_SAFE = str(TEAM_CODE).strip().upper()
 
 # Start with TEAM_CFG/local fallback
 LOGO_PATH = TEAM_CFG.get("logo_path") or SETTINGS.get("logo_image")
-BG_PATH   = TEAM_CFG.get("background_path") or SETTINGS.get("background_image")
+BG_PATH = TEAM_CFG.get("background_path") or SETTINGS.get("background_image")
 
 # ✅ Override with Supabase URLs (this is what Create School writes)
 try:
@@ -573,11 +553,29 @@ try:
 except Exception:
     pass
 
+
+def _guess_mime_from_path(p: str) -> str:
+    p = (p or "").lower()
+    if p.endswith(".png"):
+        return "image/png"
+    if p.endswith(".webp"):
+        return "image/webp"
+    return "image/jpeg"
+
+
+BG_B64 = ""
+BG_CSS_URL = ""
+
 # ✅ Background CSS source (URL vs local base64)
 if BG_PATH and (str(BG_PATH).startswith("http://") or str(BG_PATH).startswith("https://")):
-    BG_CSS_URL = BG_PATH
+    BG_CSS_URL = str(BG_PATH).strip()
 else:
-    BG_CSS_URL = ""
+    BG_B64 = get_base64_image(BG_PATH)
+    if BG_B64:
+        mime = _guess_mime_from_path(str(BG_PATH))
+        BG_CSS_URL = f"data:{mime};base64,{BG_B64}"
+    else:
+        BG_CSS_URL = ""
 
 
 
